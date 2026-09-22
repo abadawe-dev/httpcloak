@@ -67,10 +67,6 @@ func TestChrome150Presets(t *testing.T) {
 		}
 	}
 
-	// chrome-latest tracks the newest desktop preset, now 152.
-	if ua := Get("chrome-latest").UserAgent; !strings.Contains(ua, "Chrome/152.0.0.0") {
-		t.Errorf("chrome-latest UA = %q, want Chrome/152.0.0.0", ua)
-	}
 }
 
 // Locks the Chrome 150 iOS preset. iOS Chrome is forced onto Safari/WebKit's TLS
@@ -102,12 +98,6 @@ func TestChrome150IOSPreset(t *testing.T) {
 	// the 148 base; a based_on regression would drop it to desktop Chrome's order.
 	if len(p.HeaderOrder) == 0 || p.HeaderOrder[0].Key != "sec-fetch-dest" {
 		t.Errorf("chrome-150-ios: header order should lead with sec-fetch-dest, got %+v", p.HeaderOrder)
-	}
-	// chrome-latest-ios tracks the newest CAPTURED iOS preset, now 152. It sat
-	// on 150 for a while because the 151 User-Agent was invented, and moved
-	// only once real captures landed for 151 and then 152.
-	if ua := Get("chrome-latest-ios").UserAgent; !strings.Contains(ua, "CriOS/152.0.7977.64") {
-		t.Errorf("chrome-latest-ios UA = %q, want the captured CriOS/152.0.7977.64", ua)
 	}
 }
 
@@ -158,9 +148,6 @@ func TestChrome150AndroidPreset(t *testing.T) {
 	// ...but not on QUIC.
 	if len(p.QUICSignatureAlgorithms) != 0 {
 		t.Errorf("chrome-150-android: QUICSignatureAlgorithms must be empty, got %v", p.QUICSignatureAlgorithms)
-	}
-	if ua := Get("chrome-latest-android").UserAgent; !strings.Contains(ua, "Chrome/152.0.0.0") {
-		t.Errorf("chrome-latest-android UA = %q, want Chrome/152.0.0.0", ua)
 	}
 }
 

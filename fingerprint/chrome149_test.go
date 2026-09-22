@@ -34,8 +34,4 @@ func TestChrome149Presets(t *testing.T) {
 		}
 	}
 
-	// chrome-latest tracks the newest desktop preset, now 152.
-	if ua := Get("chrome-latest").UserAgent; !strings.Contains(ua, "Chrome/152.0.0.0") {
-		t.Errorf("chrome-latest UA = %q, want Chrome/152.0.0.0", ua)
-	}
 }

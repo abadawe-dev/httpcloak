@@ -3481,7 +3481,22 @@ public static class Presets
     public const string ChromeLatestIos = "chrome-latest-ios";
     public const string ChromeLatestAndroid = "chrome-latest-android";
 
-    // Chrome 149 (desktop; wire fingerprint identical to 148)
+    // Chrome 153 (headers-only over 152; no iOS preset until one is captured)
+    public const string Chrome153 = "chrome-153";
+    public const string Chrome153Windows = "chrome-153-windows";
+    public const string Chrome153Linux = "chrome-153-linux";
+    public const string Chrome153MacOS = "chrome-153-macos";
+    public const string Chrome153Android = "chrome-153-android";
+
+    // Chrome 152 (trust anchors, plus a greased signature algorithm on TCP)
+    public const string Chrome152 = "chrome-152";
+    public const string Chrome152Windows = "chrome-152-windows";
+    public const string Chrome152Linux = "chrome-152-linux";
+    public const string Chrome152MacOS = "chrome-152-macos";
+    public const string Chrome152Android = "chrome-152-android";
+    public const string Chrome152IOS = "chrome-152-ios";
+
+    // Chrome 151 (headers only over 150)
     public const string Chrome151 = "chrome-151";
     public const string Chrome151Windows = "chrome-151-windows";
     public const string Chrome151Linux = "chrome-151-linux";

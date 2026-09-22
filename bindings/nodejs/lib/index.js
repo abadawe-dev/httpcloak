@@ -40,7 +40,22 @@ const Preset = {
   CHROME_LATEST_IOS: "chrome-latest-ios",
   CHROME_LATEST_ANDROID: "chrome-latest-android",
 
-  // Chrome 149 (desktop; wire fingerprint identical to 148)
+  // Chrome 153 (headers-only over 152; no iOS preset until one is captured)
+  CHROME_153: "chrome-153",
+  CHROME_153_WINDOWS: "chrome-153-windows",
+  CHROME_153_LINUX: "chrome-153-linux",
+  CHROME_153_MACOS: "chrome-153-macos",
+  CHROME_153_ANDROID: "chrome-153-android",
+
+  // Chrome 152 (trust anchors, plus a greased signature algorithm on TCP)
+  CHROME_152: "chrome-152",
+  CHROME_152_WINDOWS: "chrome-152-windows",
+  CHROME_152_LINUX: "chrome-152-linux",
+  CHROME_152_MACOS: "chrome-152-macos",
+  CHROME_152_ANDROID: "chrome-152-android",
+  CHROME_152_IOS: "chrome-152-ios",
+
+  // Chrome 151 (headers only over 150)
   CHROME_151: "chrome-151",
   CHROME_151_WINDOWS: "chrome-151-windows",
   CHROME_151_LINUX: "chrome-151-linux",

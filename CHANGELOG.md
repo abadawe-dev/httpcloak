@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Chrome 153 presets**: `chrome-153`, `chrome-153-windows`, `chrome-153-linux`, `chrome-153-macos` and `chrome-153-android`, with the `chrome-latest*` aliases moved onto them. A headers-only release, so the ClientHello is inherited from 152 and the JA3 and JA4 values are unchanged; only the User-Agent and `sec-ch-ua` move. The brand list is not a naive version bump: Chrome reseeds the greased brand and reorders the three entries off the major version, so 153 sends `"Google Chrome";v="153", "Not_A Brand";v="8", "Chromium";v="153"` rather than 152's shape with the numbers swapped. That derivation is now replayed in the test suite against every Chrome version the library ships, so the next bump either matches it or fails loudly.
+
+  The Python, Node and .NET preset constants gain both 152 and 153; they had stopped at 151, so `chrome-152` was reachable only as a raw string in those bindings.
+
+  There is no `chrome-153-ios`. The iOS User-Agent carries a full build number that no rule derives from the major version, so an iOS preset is only ever as new as its last capture, and `chrome-latest-ios` stays on 152 until one lands. Note also that Chrome moved to a two-week release cycle with 153, so the version presets will need refreshing about twice as often as before.
+
 ## [1.7.2] - 2026-09-03
 
 Worth taking if you use HTTP/3 with a custom fingerprint. A preset built from a

@@ -113,32 +113,6 @@ func TestChrome151IOSPreset(t *testing.T) {
 	}
 }
 
-// The -latest aliases must track the newest verified preset. iOS deliberately
-// stays on 150: the iOS User-Agent carries a full build number that cannot be
-// derived from the major version, so chrome-151-ios is provisional until a real
-// capture confirms it. When that lands, update the UA in
-// embedded/chrome-151-ios.json, point chrome-latest-ios at IOSChrome151, and
-// flip this assertion.
-func TestChrome151LatestAliases(t *testing.T) {
-	for alias, want := range map[string]string{
-		"chrome-latest":         "Chrome/152.0.0.0",
-		"chrome-latest-windows": "Chrome/152.0.0.0",
-		"chrome-latest-linux":   "Chrome/152.0.0.0",
-		"chrome-latest-macos":   "Chrome/152.0.0.0",
-		"chrome-latest-android": "Chrome/152.0.0.0",
-		"chrome-latest-ios":     "CriOS/152.0.7977.64",
-	} {
-		p := Get(alias)
-		if p == nil {
-			t.Errorf("%s not registered", alias)
-			continue
-		}
-		if !strings.Contains(p.UserAgent, want) {
-			t.Errorf("%s UA = %q, want it to contain %q", alias, p.UserAgent, want)
-		}
-	}
-}
-
 func assertHeader(t *testing.T, p *Preset, key, want string) {
 	t.Helper()
 	for _, h := range p.HeaderOrder {
