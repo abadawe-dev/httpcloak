@@ -1,6 +1,8 @@
 package fingerprint
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"runtime"
 	"time"
 
@@ -175,6 +177,54 @@ func SpecForWithAnchors(id tls.ClientHelloID, seed int64, sigAlgs []tls.Signatur
 	return &spec, nil
 }
 
+// FreshShuffleSeed returns a seed drawn fresh for one ClientHello.
+//
+// Chrome permutes its extensions on every handshake, because BoringSSL keeps
+// extension_permutation on SSL_HANDSHAKE rather than on SSL_CTX. Measured on
+// 153.0.8010.52: one browser session opening 7 parallel connections produced 7
+// different orders, and 6 sequential requests over closed connections produced
+// 6 more.
+//
+// It exists because the QUIC path used to pass a seed drawn once per transport,
+// which pinned one order for a whole session. The TCP parrots hide that,
+// because their spec literals already shuffle with fresh randomness before the
+// seeded shuffle runs on top, so the seed there changes nothing. The QUIC
+// parrot literals do not, so the seed was the only shuffle and it never moved.
+// Two connections from one session carried a byte-identical extension order.
+func FreshShuffleSeed() int64 {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// A predictable seed is still better than a pinned one: the failure
+		// mode being avoided is one order for the whole session.
+		return time.Now().UnixNano()
+	}
+	return int64(binary.LittleEndian.Uint64(b[:]))
+}
+
+// SpecForQUICWithAnchors is SpecForWithAnchors for the QUIC path. The trust
+// anchor list is reshuffled per connection (see ApplyTrustAnchorsPermuted), and
+// so is the extension order.
+//
+// It ignores seed on purpose, and the parameter is kept only so both spec
+// builders read the same at their call sites. Honouring it is what caused the
+// bug this replaced: callers hold a seed for the lifetime of a transport or a
+// pool, and on QUIC that seed is the ONLY source of permutation, because the
+// QUIC parrot literals carry no inline shuffle the way the TCP ones do. Every
+// connection a session opened therefore repeated one extension order.
+//
+// Drawing here rather than at each call site is deliberate. There is no
+// legitimate reason to pin a QUIC extension order, so the choke point should
+// make it impossible rather than rely on every future caller remembering.
+func SpecForQUICWithAnchors(id tls.ClientHelloID, _ int64, sigAlgs []tls.SignatureScheme, anchors [][]byte) (*tls.ClientHelloSpec, error) {
+	spec, err := tls.UTLSIdToSpecWithSeed(id, FreshShuffleSeed())
+	if err != nil {
+		return nil, err
+	}
+	ApplySignatureAlgorithms(spec.Extensions, sigAlgs)
+	ApplyTrustAnchorsPermuted(&spec.Extensions, anchors)
+	return &spec, nil
+}
+
 // ApplySignatureAlgorithms replaces the signature_algorithms extension's list in
 // exts with algs when algs is non-empty. It operates on the shared []TLSExtension
 // slice, so the ClientHelloID-direct path (H1, mutating a live UConn's Extensions)
@@ -205,12 +255,57 @@ func ApplySignatureAlgorithms(exts []tls.TLSExtension, algs []tls.SignatureSchem
 // adding an extension changes the slice header rather than an element. That
 // also lets the H1 path pass &tlsConn.Extensions, where there is no spec.
 func ApplyTrustAnchors(exts *[]tls.TLSExtension, anchors [][]byte) {
+	applyTrustAnchors(exts, anchors, false)
+}
+
+// ApplyTrustAnchorsPermuted is the QUIC counterpart of ApplyTrustAnchors, and
+// it shuffles the anchor list on every connection.
+//
+// The two transports genuinely differ here, which is the part that took a
+// measurement to believe. Against Chrome 153.0.8010.52:
+//
+//	TCP   29 connections over 3 processes -> 1 trust_anchors payload
+//	QUIC   3 connections in ONE process   -> 3 trust_anchors payloads
+//	QUIC   6 connections over 6 processes -> 6 trust_anchors payloads
+//
+// Same 28 identifiers on both, fixed order on TCP, reshuffled per connection on
+// QUIC. That asymmetry is what the original TCP-versus-QUIC capture pair was
+// actually showing; the mistake was generalising it into a shuffle everywhere
+// rather than reading it as a difference between the two stacks.
+func ApplyTrustAnchorsPermuted(exts *[]tls.TLSExtension, anchors [][]byte) {
+	applyTrustAnchors(exts, anchors, true)
+}
+
+func applyTrustAnchors(exts *[]tls.TLSExtension, anchors [][]byte, permute bool) {
 	if exts == nil || len(anchors) == 0 {
 		return
 	}
+	// No shuffle. Chrome sends this list in a fixed order and never varies it:
+	// measured against 153.0.8010.52, 29 connections spanning three separate
+	// processes with fresh profiles produced one byte-identical payload, while
+	// the same 29 connections produced 29 different extension orders. The
+	// extension ORDER is permuted per handshake; the anchor list inside it is
+	// not.
+	//
+	// The shuffle came from reading two captures of one build, one over TCP and
+	// one over QUIC, that carried the same identifiers in different orders, and
+	// concluding the order was random. Two samples from two transports are not
+	// evidence of per-connection randomness, and held to one transport the
+	// order does not move at all.
+	//
+	// The list goes out in the order the preset stores it, and the presets store
+	// it sorted, because that is what Chrome sends. Confirmed on a real Windows
+	// Chrome 154 profile: the 28 identifiers arrive in ascending byte order.
+	//
+	// Captures taken from throwaway headless profiles (a fresh --user-data-dir)
+	// gave other, unsorted orders, and a different one again from a Chrome for
+	// Testing build of the same version. Those profiles never live long enough
+	// to receive the root store from the component updater, so they are not
+	// what a real user's browser looks like. Do not re-pin the order from a
+	// headless capture.
 	ext := &tls.TrustAnchorsExtension{
 		TrustAnchors: append([][]byte(nil), anchors...),
-		Shuffle:      true,
+		Shuffle:      permute,
 	}
 	for i, e := range *exts {
 		if _, ok := e.(*tls.TrustAnchorsExtension); ok {

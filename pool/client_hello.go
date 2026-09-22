@@ -15,6 +15,9 @@ func tcpClientHelloSpec(preset *fingerprint.Preset, id utls.ClientHelloID, seed 
 	return fingerprint.SpecForWithAnchors(id, seed, preset.SignatureAlgorithms, preset.TrustAnchors)
 }
 
+// quicClientHelloSpec passes the pool's seed through, and SpecForQUICWithAnchors
+// ignores it: on QUIC the extension order is redrawn per connection. The pool
+// holding one seed for its lifetime is exactly what used to pin that order.
 func quicClientHelloSpec(preset *fingerprint.Preset, id utls.ClientHelloID, seed int64) (*utls.ClientHelloSpec, error) {
-	return fingerprint.SpecForWithAnchors(id, seed, preset.QUICSignatureAlgorithms, preset.TrustAnchors)
+	return fingerprint.SpecForQUICWithAnchors(id, seed, preset.QUICSignatureAlgorithms, preset.TrustAnchors)
 }

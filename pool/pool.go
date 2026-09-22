@@ -1284,8 +1284,8 @@ type Manager struct {
 	echConfig          []byte               // Custom ECH configuration
 	echConfigDomain    string               // Domain to fetch ECH config from
 
-	// Cached TLS specs - shared across all HostPools for consistent fingerprint
-	// Chrome shuffles extension order once per session, not per connection
+	// Reference specs, shared only as an availability check. The extension
+	// order is redrawn per connection, which is what Chrome does.
 	cachedSpec    *utls.ClientHelloSpec
 	cachedPSKSpec *utls.ClientHelloSpec
 	shuffleSeed   int64 // Seed used for extension shuffling
@@ -1323,8 +1323,8 @@ func NewManagerWithTLSConfig(preset *fingerprint.Preset, insecureSkipVerify bool
 		stopCleanup:        make(chan struct{}),
 	}
 
-	// Generate and cache ClientHelloSpec with shuffled extensions
-	// Chrome shuffles extensions once per session, not per connection
+	// Build a reference spec so a dial can check one is buildable. The order
+	// it carries is not reused: each connection draws its own.
 	if preset.JA3 != "" {
 		if spec, err := fingerprint.ParseJA3(preset.JA3, preset.JA3Extras); err == nil {
 			m.cachedSpec = spec

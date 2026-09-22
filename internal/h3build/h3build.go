@@ -44,13 +44,21 @@ type QUICOptions struct {
 	// TransportParameterShuffleSeed pins the transport-parameter order, and
 	// production leaves it at zero so the order is reshuffled per connection.
 	//
-	// It is NOT the session's ClientHello shuffle seed, and the two must not be
-	// conflated. Chrome permutes its TLS extensions once per profile, so one
-	// session holding one extension order is right; it reshuffles transport
-	// parameters on every serialization, so a session holding one parameter
-	// order means every connection that session opens carries a byte-identical
-	// ID sequence. That is detectable with no probability argument at all:
-	// strip the GREASE id, length and payload from two connections and compare.
+	// It is NOT a ClientHello shuffle seed, and the two must not be conflated.
+	// Chrome reshuffles transport parameters on every serialization, so a
+	// session holding one parameter order means every connection that session
+	// opens carries a byte-identical ID sequence. That is detectable with no
+	// probability argument at all: strip the GREASE id, length and payload from
+	// two connections and compare.
+	//
+	// An earlier version of this comment claimed Chrome permutes its TLS
+	// extensions once per profile, and that one session holding one extension
+	// order was therefore right. That is wrong, and the QUIC transport was built
+	// to match it: every connection in a session carried the same extension
+	// order. Measured on 153.0.8010.52, one browser session opening 7 parallel
+	// connections produced 7 different orders, and 3 QUIC connections from one
+	// process produced 3. The permutation lives on the handshake, not the
+	// profile. See fingerprint.FreshShuffleSeed.
 	TransportParameterShuffleSeed int64
 
 	ClientHelloID *utls.ClientHelloID

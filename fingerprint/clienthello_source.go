@@ -388,7 +388,7 @@ func ResolveQUICClientHelloSpec(p *Preset, wantPSK bool, seed int64) (*utls.Clie
 			"preset %q has no QUIC client hello: no capture or ja3 carrying "+
 				"quic_transport_parameters, and no quic_client_hello_id", p.Name)
 	}
-	spec, err := SpecForWithAnchors(id, seed, p.QUICSignatureAlgorithms, p.TrustAnchors)
+	spec, err := SpecForQUICWithAnchors(id, seed, p.QUICSignatureAlgorithms, p.TrustAnchors)
 	if err != nil {
 		return nil, SourceClientHelloID, fmt.Errorf(
 			"build quic spec for %s/%s: %w", id.Client, id.Version, err)

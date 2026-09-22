@@ -15,6 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   There is no `chrome-153-ios`. The iOS User-Agent carries a full build number that no rule derives from the major version, so an iOS preset is only ever as new as its last capture, and `chrome-latest-ios` stays on 152 until one lands. Note also that Chrome moved to a two-week release cycle with 153, so the version presets will need refreshing about twice as often as before.
 
+### Fixed
+
+- **HTTP/3 held one ClientHello extension order for a whole session**: every QUIC connection a session opened carried a byte-identical extension sequence, so two connections were linkable by comparing them, with nothing hashed to hide behind and no probability argument required. Chrome redraws the permutation on every handshake, because BoringSSL keeps it on the handshake rather than on the context. Measured on 153.0.8010.52: one browser session opening 7 parallel connections gave 7 different orders, and 3 QUIC connections from one process gave 3.
+
+  The cause was a seed drawn once per transport, and per pool. On TCP that seed is inert, because the Chrome spec literals already shuffle with fresh randomness when a spec is built and the seeded shuffle runs on top; the QUIC literals carry no such inline shuffle, so the seed was the only permutation and it never moved. The QUIC spec builder now draws per call and ignores the seed it is handed, which puts the guarantee at the choke point rather than relying on every call site to remember. The per-transport seed field is gone.
+
+  Three comments in the tree asserted the opposite, that Chrome permutes once per session or once per profile and that holding one order was therefore correct. One of them was load-bearing: an existing regression test required the extension order to be identical across connections. All are corrected, and that test now locks the real behaviour: the order must move between dials, while the extension set and the cipher-suite order must not.
+
+- **`trust_anchors` no longer changes on every connection**: the extension (0xCA34, shipped by Chrome from 152) carries a list of trust anchor identifiers, and we permuted that list on each handshake. Chrome does not. Measured against 153.0.8010.52, 29 connections spanning three separate processes with fresh profiles produced one byte-identical payload, while the same 29 connections produced 29 different extension orders. The extension's position in the ClientHello is permuted per handshake; the list inside it is fixed. Two connections from one session were therefore linkable by comparing the extension body, with no statistics needed and nothing hashed to hide behind.
+
+  The shuffle came from reading two captures of one build, one over TCP and one over QUIC, that carried the same identifiers in a different order and concluding the order was random. Two samples drawn from two transports do not show per-connection randomness, and held to one transport the order does not move at all.
+
+  It is not off everywhere, though, because the two transports genuinely differ. The same binary reshuffles the list on every QUIC connection: three QUIC connections from one process gave three different payloads, where 29 TCP connections gave one. Captured by decrypting Chrome's QUIC Initial packets, whose keys derive from the connection id and so are readable by any observer. The QUIC path keeps the per-connection shuffle; only TCP is pinned. A single answer for both transports would have been wrong whichever way it was chosen.
+
+  The order itself is unchanged: the identifiers go out sorted, which is what a real Chrome sends, and the emitted payload is byte-identical to one captured from a Windows Chrome 154 profile in everyday use. Headless captures on throwaway profiles show other orders, because those profiles never receive the root store update, so they are not a reliable reference for this extension. Locked at three layers: the flag, the stored order, and the bytes on the wire across repeated handshakes.
+
 ## [1.7.2] - 2026-09-03
 
 Worth taking if you use HTTP/3 with a custom fingerprint. A preset built from a

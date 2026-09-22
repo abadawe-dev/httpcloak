@@ -244,8 +244,9 @@ type QUICHostPool struct {
 	connections []*QUICConn
 	mu          sync.Mutex
 
-	// Cached ClientHelloSpec for consistent TLS fingerprint
-	// Chrome shuffles TLS extensions once per session, not per connection
+	// Reference spec, used only to check that a spec can be built. Each dial
+	// builds its own with a freshly drawn extension order; see
+	// fingerprint.FreshShuffleSeed.
 	cachedClientHelloSpec *utls.ClientHelloSpec
 
 	// Cached PSK ClientHelloSpec for session resumption
@@ -773,8 +774,8 @@ type QUICManager struct {
 	tlsVerify          *transport.TLSVerify // Caller-supplied cert verification hooks
 	localAddr          string               // Local IP to bind outgoing connections
 
-	// Cached TLS specs - shared across all QUICHostPools for consistent fingerprint
-	// Chrome shuffles extension order once per session, not per connection
+	// Reference specs, shared only as an availability check. The extension
+	// order is redrawn per connection, which is what Chrome does.
 	cachedSpec    *utls.ClientHelloSpec
 	cachedPSKSpec *utls.ClientHelloSpec
 	shuffleSeed   int64 // Seed used for extension shuffling
@@ -802,8 +803,8 @@ func NewQUICManager(preset *fingerprint.Preset, dnsCache *dns.Cache) *QUICManage
 		stopCleanup:     make(chan struct{}),
 	}
 
-	// Generate and cache ClientHelloSpec with shuffled extensions
-	// Chrome shuffles extensions once per session, not per connection
+	// Build a reference spec so a dial can check one is buildable. The order
+	// it carries is not reused: each connection draws its own.
 	if preset != nil && preset.QUICClientHelloID.Client != "" {
 		if spec, err := quicClientHelloSpec(preset, preset.QUICClientHelloID, shuffleSeed); err == nil {
 			m.cachedSpec = spec

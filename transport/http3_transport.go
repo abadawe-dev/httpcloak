@@ -269,8 +269,9 @@ type HTTP3Transport struct {
 	// TLS session cache for 0-RTT resumption
 	sessionCache tls.ClientSessionCache
 
-	// Cached ClientHelloSpec for consistent TLS fingerprint
-	// Chrome shuffles TLS extensions once per session, not per connection
+	// Seed spec, built at construction so a dial has something if spec
+	// resolution fails. Dials go through getSpecForHost, which builds a fresh
+	// one per connection; see FreshShuffleSeed for why that matters.
 	cachedClientHelloSpec *utls.ClientHelloSpec
 	// PSK variant of the spec for session resumption (includes pre_shared_key extension)
 	cachedClientHelloSpecPSK *utls.ClientHelloSpec
@@ -283,12 +284,9 @@ type HTTP3Transport struct {
 	// Resolved ClientHelloID (QUIC-specific, or TCP fallback). Used to regenerate
 	// a FRESH ClientHelloSpec per dial. utls ApplyPreset mutates the spec in place
 	// (KeyShares.Data, GREASE), so sharing one cached spec across concurrent QUIC
-	// dials is a data race; each dial gets its own spec generated from this ID +
-	// shuffleSeed, which keeps extension order (and thus JA3/JA4) byte-stable.
+	// dials is a data race; each dial builds its own spec from this ID, with the
+	// extension order redrawn per connection the way Chrome draws it.
 	clientHelloID *utls.ClientHelloID
-
-	// Shuffle seed for TLS and transport parameter ordering (consistent per session)
-	shuffleSeed int64
 
 	// specErr holds why the QUIC hello could not be built, so a dial reports it
 	// instead of connecting with the QUIC stack's default hello.
@@ -438,10 +436,12 @@ func (t *HTTP3Transport) hasSessionForHost(host string) bool {
 
 // getSpecForHost returns a FRESH ClientHelloSpec for this dial. utls ApplyPreset
 // (and quic-go's GREASE write-back) mutate the spec in place, so handing the same
-// cached spec to concurrent QUIC dials is a data race. We regenerate per call from
-// the stored ClientHelloID + shuffleSeed: the seed makes the extension order (and
-// therefore JA3/JA4) byte-identical every time, while each connection mutates its
-// own private spec. This mirrors the HTTP/2 transport, which is already race-clean.
+// cached spec to concurrent QUIC dials is a data race. We regenerate per call,
+// and the extension order is redrawn each time rather than held for the session,
+// because that is what Chrome does: BoringSSL keeps extension_permutation on
+// SSL_HANDSHAKE, not on SSL_CTX. Holding one order per session made two
+// connections from one session carry a byte-identical order, which is visible
+// without any statistics at all. See fingerprint.FreshShuffleSeed.
 //
 // The PSK variant (which carries the early_data + pre_shared_key extensions) is
 // used only when there is a cached session to resume; Chrome does not send
@@ -467,7 +467,7 @@ func (t *HTTP3Transport) getSpecForHost(host string) *utls.ClientHelloSpec {
 // fingerprint that looks wrong.
 func (t *HTTP3Transport) resolveQUICSpec(host string) (*utls.ClientHelloSpec, error) {
 	wantPSK := t.preset.QUICPSKClientHelloID.Client != "" && t.hasSessionForHost(host)
-	spec, _, err := fingerprint.ResolveQUICClientHelloSpec(t.preset, wantPSK, t.shuffleSeed)
+	spec, _, err := fingerprint.ResolveQUICClientHelloSpec(t.preset, wantPSK, fingerprint.FreshShuffleSeed())
 	return spec, err
 }
 
@@ -507,11 +507,6 @@ func NewHTTP3Transport(preset *fingerprint.Preset, dnsCache *dns.Cache) (*HTTP3T
 
 // NewHTTP3TransportWithTransportConfig creates a new HTTP/3 transport with advanced config
 func NewHTTP3TransportWithTransportConfig(preset *fingerprint.Preset, dnsCache *dns.Cache, config *TransportConfig) (*HTTP3Transport, error) {
-	// Generate shuffle seed for session-consistent ordering
-	var seedBytes [8]byte
-	crand.Read(seedBytes[:])
-	shuffleSeed := int64(binary.LittleEndian.Uint64(seedBytes[:]))
-
 	// Create session cache - with optional distributed backend
 	var sessionCache *PersistableSessionCache
 	if config != nil && config.SessionCacheBackend != nil {
@@ -529,7 +524,6 @@ func NewHTTP3TransportWithTransportConfig(preset *fingerprint.Preset, dnsCache *
 		preset:         preset,
 		dnsCache:       dnsCache,
 		sessionCache:   sessionCache,
-		shuffleSeed:    shuffleSeed,
 		config:         config,
 		echConfigCache: make(map[string]*echCachedConfig), // Cache for ECH configs (for session resumption)
 	}
@@ -546,14 +540,13 @@ func NewHTTP3TransportWithTransportConfig(preset *fingerprint.Preset, dnsCache *
 	}
 	t.clientHelloID = clientHelloID // stored for fresh-spec-per-dial regeneration
 
-	// Cache the ClientHelloSpec for consistent TLS fingerprint across connections
-	// Chrome shuffles TLS extensions once per session, not per connection
-	// Use the shuffle seed for deterministic ordering
+	// Build the seed spec. Dials do not use it directly; they call
+	// getSpecForHost, which draws a fresh extension order per connection.
 	if clientHelloID != nil {
-		spec, err := utls.UTLSIdToSpecWithSeed(*clientHelloID, shuffleSeed)
+		spec, err := utls.UTLSIdToSpecWithSeed(*clientHelloID, fingerprint.FreshShuffleSeed())
 		if err == nil {
 			fingerprint.ApplySignatureAlgorithms(spec.Extensions, preset.QUICSignatureAlgorithms)
-			fingerprint.ApplyTrustAnchors(&spec.Extensions, preset.TrustAnchors)
+			fingerprint.ApplyTrustAnchorsPermuted(&spec.Extensions, preset.TrustAnchors)
 			t.cachedClientHelloSpec = &spec
 		}
 	}
@@ -561,9 +554,9 @@ func NewHTTP3TransportWithTransportConfig(preset *fingerprint.Preset, dnsCache *
 	// Also cache the PSK spec for session resumption (includes pre_shared_key extension)
 	// Chrome uses a different TLS extension set when resuming with PSK
 	if preset.QUICPSKClientHelloID.Client != "" {
-		if pskSpec, err := utls.UTLSIdToSpecWithSeed(preset.QUICPSKClientHelloID, shuffleSeed); err == nil {
+		if pskSpec, err := utls.UTLSIdToSpecWithSeed(preset.QUICPSKClientHelloID, fingerprint.FreshShuffleSeed()); err == nil {
 			fingerprint.ApplySignatureAlgorithms(pskSpec.Extensions, preset.QUICSignatureAlgorithms)
-			fingerprint.ApplyTrustAnchors(&pskSpec.Extensions, preset.TrustAnchors)
+			fingerprint.ApplyTrustAnchorsPermuted(&pskSpec.Extensions, preset.TrustAnchors)
 			t.cachedClientHelloSpecPSK = &pskSpec
 		}
 	}
@@ -665,11 +658,6 @@ func NewHTTP3TransportWithConfig(preset *fingerprint.Preset, dnsCache *dns.Cache
 		}
 	}
 
-	// Generate shuffle seed for session-consistent ordering
-	var seedBytes [8]byte
-	crand.Read(seedBytes[:])
-	shuffleSeed := int64(binary.LittleEndian.Uint64(seedBytes[:]))
-
 	// Create session cache - with optional distributed backend
 	var sessionCache *PersistableSessionCache
 	if config != nil && config.SessionCacheBackend != nil {
@@ -687,7 +675,6 @@ func NewHTTP3TransportWithConfig(preset *fingerprint.Preset, dnsCache *dns.Cache
 		preset:         preset,
 		dnsCache:       dnsCache,
 		sessionCache:   sessionCache,
-		shuffleSeed:    shuffleSeed,
 		proxyConfig:    proxyConfig,
 		config:         config,
 		echConfigCache: make(map[string]*echCachedConfig),
@@ -710,19 +697,19 @@ func NewHTTP3TransportWithConfig(preset *fingerprint.Preset, dnsCache *dns.Cache
 
 	// Cache ClientHelloSpec for consistent fingerprint
 	if clientHelloID != nil {
-		spec, err := utls.UTLSIdToSpecWithSeed(*clientHelloID, shuffleSeed)
+		spec, err := utls.UTLSIdToSpecWithSeed(*clientHelloID, fingerprint.FreshShuffleSeed())
 		if err == nil {
 			fingerprint.ApplySignatureAlgorithms(spec.Extensions, preset.QUICSignatureAlgorithms)
-			fingerprint.ApplyTrustAnchors(&spec.Extensions, preset.TrustAnchors)
+			fingerprint.ApplyTrustAnchorsPermuted(&spec.Extensions, preset.TrustAnchors)
 			t.cachedClientHelloSpec = &spec
 		}
 	}
 
 	// Also cache the PSK spec for session resumption (includes pre_shared_key extension)
 	if preset.QUICPSKClientHelloID.Client != "" {
-		if pskSpec, err := utls.UTLSIdToSpecWithSeed(preset.QUICPSKClientHelloID, shuffleSeed); err == nil {
+		if pskSpec, err := utls.UTLSIdToSpecWithSeed(preset.QUICPSKClientHelloID, fingerprint.FreshShuffleSeed()); err == nil {
 			fingerprint.ApplySignatureAlgorithms(pskSpec.Extensions, preset.QUICSignatureAlgorithms)
-			fingerprint.ApplyTrustAnchors(&pskSpec.Extensions, preset.TrustAnchors)
+			fingerprint.ApplyTrustAnchorsPermuted(&pskSpec.Extensions, preset.TrustAnchors)
 			t.cachedClientHelloSpecPSK = &pskSpec
 		}
 	}
@@ -789,11 +776,6 @@ func NewHTTP3TransportWithConfig(preset *fingerprint.Preset, dnsCache *dns.Cache
 // MASQUE allows HTTP/3 (QUIC) traffic to be tunneled through an HTTP/3 proxy using
 // the CONNECT-UDP method defined in RFC 9298.
 func NewHTTP3TransportWithMASQUE(preset *fingerprint.Preset, dnsCache *dns.Cache, proxyConfig *ProxyConfig, config *TransportConfig) (*HTTP3Transport, error) {
-	// Generate shuffle seed for session-consistent ordering
-	var seedBytes [8]byte
-	crand.Read(seedBytes[:])
-	shuffleSeed := int64(binary.LittleEndian.Uint64(seedBytes[:]))
-
 	// Create session cache - with optional distributed backend
 	var sessionCache *PersistableSessionCache
 	if config != nil && config.SessionCacheBackend != nil {
@@ -811,7 +793,6 @@ func NewHTTP3TransportWithMASQUE(preset *fingerprint.Preset, dnsCache *dns.Cache
 		preset:         preset,
 		dnsCache:       dnsCache,
 		sessionCache:   sessionCache,
-		shuffleSeed:    shuffleSeed,
 		proxyConfig:    proxyConfig,
 		config:         config,
 		echConfigCache: make(map[string]*echCachedConfig),
@@ -834,18 +815,18 @@ func NewHTTP3TransportWithMASQUE(preset *fingerprint.Preset, dnsCache *dns.Cache
 
 	// Cache ClientHelloSpec for consistent fingerprint (outer connection to proxy)
 	if clientHelloID != nil {
-		spec, err := utls.UTLSIdToSpecWithSeed(*clientHelloID, shuffleSeed)
+		spec, err := utls.UTLSIdToSpecWithSeed(*clientHelloID, fingerprint.FreshShuffleSeed())
 		if err == nil {
 			fingerprint.ApplySignatureAlgorithms(spec.Extensions, preset.QUICSignatureAlgorithms)
-			fingerprint.ApplyTrustAnchors(&spec.Extensions, preset.TrustAnchors)
+			fingerprint.ApplyTrustAnchorsPermuted(&spec.Extensions, preset.TrustAnchors)
 			t.cachedClientHelloSpec = &spec
 		}
 		// Create separate cached spec for inner connections (not shared with outer)
 		// This ensures JA4 hash is consistent across inner requests
-		innerSpec, err := utls.UTLSIdToSpecWithSeed(*clientHelloID, shuffleSeed)
+		innerSpec, err := utls.UTLSIdToSpecWithSeed(*clientHelloID, fingerprint.FreshShuffleSeed())
 		if err == nil {
 			fingerprint.ApplySignatureAlgorithms(innerSpec.Extensions, preset.QUICSignatureAlgorithms)
-			fingerprint.ApplyTrustAnchors(&innerSpec.Extensions, preset.TrustAnchors)
+			fingerprint.ApplyTrustAnchorsPermuted(&innerSpec.Extensions, preset.TrustAnchors)
 			t.cachedClientHelloSpecInner = &innerSpec
 		}
 	}
@@ -853,15 +834,15 @@ func NewHTTP3TransportWithMASQUE(preset *fingerprint.Preset, dnsCache *dns.Cache
 	// Also cache PSK specs for session resumption (includes pre_shared_key extension)
 	if preset.QUICPSKClientHelloID.Client != "" {
 		// Outer PSK spec
-		if pskSpec, err := utls.UTLSIdToSpecWithSeed(preset.QUICPSKClientHelloID, shuffleSeed); err == nil {
+		if pskSpec, err := utls.UTLSIdToSpecWithSeed(preset.QUICPSKClientHelloID, fingerprint.FreshShuffleSeed()); err == nil {
 			fingerprint.ApplySignatureAlgorithms(pskSpec.Extensions, preset.QUICSignatureAlgorithms)
-			fingerprint.ApplyTrustAnchors(&pskSpec.Extensions, preset.TrustAnchors)
+			fingerprint.ApplyTrustAnchorsPermuted(&pskSpec.Extensions, preset.TrustAnchors)
 			t.cachedClientHelloSpecPSK = &pskSpec
 		}
 		// Inner PSK spec for MASQUE connections
-		if innerPskSpec, err := utls.UTLSIdToSpecWithSeed(preset.QUICPSKClientHelloID, shuffleSeed); err == nil {
+		if innerPskSpec, err := utls.UTLSIdToSpecWithSeed(preset.QUICPSKClientHelloID, fingerprint.FreshShuffleSeed()); err == nil {
 			fingerprint.ApplySignatureAlgorithms(innerPskSpec.Extensions, preset.QUICSignatureAlgorithms)
-			fingerprint.ApplyTrustAnchors(&innerPskSpec.Extensions, preset.TrustAnchors)
+			fingerprint.ApplyTrustAnchorsPermuted(&innerPskSpec.Extensions, preset.TrustAnchors)
 			t.cachedClientHelloSpecInnerPSK = &innerPskSpec
 		}
 	}

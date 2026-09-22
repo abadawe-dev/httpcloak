@@ -3,58 +3,108 @@ package transport
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/sardanioss/httpcloak/dns"
 	"github.com/sardanioss/httpcloak/fingerprint"
+	utls "github.com/sardanioss/utls"
 )
 
 // The H3 transport regenerates the ClientHelloSpec per dial (the fix for the
 // concurrent-dial data race: utls ApplyPreset mutates the spec in place, so a
 // shared cached spec races under concurrency). This regression test locks the
-// two properties that fix depends on:
+// three properties that fix depends on:
 //
 //  1. each call returns a DISTINCT spec object (structural race-safety: no two
-//     concurrent dials ever hold the same mutable spec), and
-//  2. the extension and cipher-suite ORDER is byte-identical across calls, so
-//     JA3/JA4 stay stable between connections of one session.
+//     concurrent dials ever hold the same mutable spec),
+//  2. the extension ORDER varies between calls, because Chrome redraws its
+//     permutation on every handshake, and
+//  3. the extension SET and the cipher-suite order do NOT vary, because those
+//     are fixed properties of the profile.
+//
+// Property 2 used to be asserted the other way round, requiring a byte-identical
+// extension order across calls "so JA3/JA4 stay stable between connections of one
+// session". That is not what Chrome does. BoringSSL keeps extension_permutation
+// on SSL_HANDSHAKE rather than on SSL_CTX, so the order is redrawn per
+// connection. Measured on Chrome 153.0.8010.52: one browser session opening 7
+// parallel connections produced 7 different orders, and 3 QUIC connections from
+// one process produced 3. Holding one order per session made two connections
+// from one session linkable by comparing extension sequences, with no statistics
+// needed.
 func TestH3SpecRegenDeterministic(t *testing.T) {
 	tr, err := NewHTTP3Transport(fingerprint.Chrome146(), dns.NewCache())
 	if err != nil {
 		t.Fatalf("NewHTTP3Transport: %v", err)
 	}
 
-	s1 := tr.getSpecForHost("example.com")
-	s2 := tr.getSpecForHost("example.com")
-	if s1 == nil || s2 == nil {
-		t.Fatal("getSpecForHost returned nil")
+	const n = 8
+	specs := make([]*utls.ClientHelloSpec, 0, n)
+	for i := 0; i < n; i++ {
+		s := tr.getSpecForHost("example.com")
+		if s == nil {
+			t.Fatal("getSpecForHost returned nil")
+		}
+		specs = append(specs, s)
 	}
 
 	// (1) distinct objects: a shared pointer would mean concurrent dials race.
-	if s1 == s2 {
-		t.Fatal("getSpecForHost returned the SAME spec pointer twice; concurrent dials would race-mutate it")
-	}
-
-	// (2a) extension order identical (drives JA4).
-	if len(s1.Extensions) != len(s2.Extensions) {
-		t.Fatalf("extension count drift: %d vs %d", len(s1.Extensions), len(s2.Extensions))
-	}
-	for i := range s1.Extensions {
-		a, b := fmt.Sprintf("%T", s1.Extensions[i]), fmt.Sprintf("%T", s2.Extensions[i])
-		if a != b {
-			t.Fatalf("extension order drift at %d: %s vs %s (JA4 would change between connections)", i, a, b)
+	for i := range specs {
+		for j := i + 1; j < len(specs); j++ {
+			if specs[i] == specs[j] {
+				t.Fatal("getSpecForHost returned the SAME spec pointer twice; concurrent dials would race-mutate it")
+			}
 		}
 	}
 
-	// (2b) cipher-suite order identical (drives JA3).
-	if len(s1.CipherSuites) != len(s2.CipherSuites) {
-		t.Fatalf("cipher count drift: %d vs %d", len(s1.CipherSuites), len(s2.CipherSuites))
+	// (2) the extension order must move between connections.
+	orders := map[string]int{}
+	for _, sp := range specs {
+		var b []string
+		for _, e := range sp.Extensions {
+			b = append(b, fmt.Sprintf("%T", e))
+		}
+		orders[strings.Join(b, "|")]++
 	}
-	for i := range s1.CipherSuites {
-		if s1.CipherSuites[i] != s2.CipherSuites[i] {
-			t.Fatalf("cipher order drift at %d: %#x vs %#x", i, s1.CipherSuites[i], s2.CipherSuites[i])
+	if len(orders) == 1 {
+		t.Fatalf("%d dials produced ONE extension order; the order is pinned for "+
+			"the session, so every connection carries a byte-identical ClientHello "+
+			"order. Chrome redraws the permutation on every handshake.", n)
+	}
+
+	// (3) the extension SET is fixed even though the order is not, and so is the
+	// cipher-suite order. A permutation that added or dropped an extension, or
+	// that reordered ciphers, would be a different bug wearing the same clothes.
+	want := sortedTypes(specs[0].Extensions)
+	for i, sp := range specs[1:] {
+		got := sortedTypes(sp.Extensions)
+		if len(got) != len(want) {
+			t.Fatalf("dial %d: extension count drift: %d vs %d", i+1, len(got), len(want))
+		}
+		for k := range want {
+			if got[k] != want[k] {
+				t.Fatalf("dial %d: extension SET drift: %s vs %s", i+1, got[k], want[k])
+			}
+		}
+		if len(sp.CipherSuites) != len(specs[0].CipherSuites) {
+			t.Fatalf("dial %d: cipher count drift: %d vs %d", i+1, len(sp.CipherSuites), len(specs[0].CipherSuites))
+		}
+		for k := range sp.CipherSuites {
+			if sp.CipherSuites[k] != specs[0].CipherSuites[k] {
+				t.Fatalf("dial %d: cipher order drift at %d: %#x vs %#x; Chrome permutes "+
+					"extensions, not cipher suites", i+1, k, sp.CipherSuites[k], specs[0].CipherSuites[k])
+			}
 		}
 	}
+}
+
+func sortedTypes(exts []utls.TLSExtension) []string {
+	out := make([]string, len(exts))
+	for i, e := range exts {
+		out[i] = fmt.Sprintf("%T", e)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // A TCP-only fingerprint source must not degrade the HTTP/3 hello.

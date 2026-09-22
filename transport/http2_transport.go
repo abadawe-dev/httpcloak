@@ -54,9 +54,17 @@ type HTTP2Transport struct {
 	// TLS session resumption cache (shared across connections)
 	sessionCache utls.ClientSessionCache
 
-	// Shuffle seed for consistent TLS extension order across all connections
-	// Chrome shuffles extensions once per session, not per connection
-	// Each connection needs a fresh spec (ApplyPreset mutates it), but same seed
+	// Seed passed to the spec builder. It does NOT pin the extension order, and
+	// must not be made to: Chrome redraws the permutation on every handshake,
+	// because BoringSSL keeps extension_permutation on SSL_HANDSHAKE rather than
+	// on SSL_CTX. Measured on 153.0.8010.52, one browser session opening 7
+	// parallel connections produced 7 different orders.
+	//
+	// It is inert here. The TCP parrot literals already shuffle with fresh
+	// randomness when the spec is built, and the seeded shuffle runs on top of
+	// that, so the result is fresh per connection whatever the seed is. The QUIC
+	// parrots had no such inline shuffle, which is why the same seed DID pin
+	// their order until it was removed. See fingerprint.FreshShuffleSeed.
 	shuffleSeed int64
 
 	// Cached spec presence flags - indicate if preset supports these specs
@@ -257,9 +265,8 @@ func NewHTTP2TransportWithConfig(preset *fingerprint.Preset, dnsCache *dns.Cache
 		sessionCache = NewPersistableSessionCache()
 	}
 
-	// Generate random seed for TLS extension shuffling
-	// Chrome shuffles extensions once per session, not per connection
-	// This seed ensures consistent ordering across all connections in this transport
+	// Seed for the spec builder. It does not pin the extension order and must
+	// not be made to; see the shuffleSeed field for why it is inert here.
 	var seedBytes [8]byte
 	crand.Read(seedBytes[:])
 	shuffleSeed := int64(binary.LittleEndian.Uint64(seedBytes[:]))
