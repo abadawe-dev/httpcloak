@@ -158,7 +158,12 @@ class LifecycleTest {
 
     @Test
     fun streamIsClosedWhenTheCallerIsCancelledOnTheWayBack() {
-        LoopbackServer(respond = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n").use { server ->
+        // The response is held back so the caller's thread is occupied before it
+        // arrives; answered at once, the stream can reach the caller first.
+        LoopbackServer(
+            respond = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n",
+            delayMillis = 500,
+        ).use { server ->
             val caller = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
             caller.use {
                 val job = GlobalScope.launch(it) { session.stream(Request(server.url)) }
@@ -170,10 +175,11 @@ class LifecycleTest {
                 // behind it, then cancel before it can be handed over.
                 val gate = CountDownLatch(1)
                 it.executor.execute { gate.await() }
-                Thread.sleep(1000)
+                Thread.sleep(1500)
                 job.cancel()
                 gate.countDown()
                 runBlocking { job.join() }
+                assertTrue("stream reached the caller before the cancel", job.isCancelled)
             }
             // Unclosed, the stream would hold its connection for two minutes.
             assertTrue("stream discarded on the way back was left open", server.hungUpWithin(seconds = 10))
