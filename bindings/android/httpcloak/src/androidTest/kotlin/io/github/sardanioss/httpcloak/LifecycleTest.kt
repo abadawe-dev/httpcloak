@@ -1,6 +1,7 @@
 package io.github.sardanioss.httpcloak
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -23,6 +24,7 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
+import kotlin.coroutines.CoroutineContext
 
 /**
  * Request, cancellation and resource lifetimes, against servers on the device's
@@ -158,29 +160,26 @@ class LifecycleTest {
 
     @Test
     fun streamIsClosedWhenTheCallerIsCancelledOnTheWayBack() {
-        // The response is held back so the caller's thread is occupied before it
-        // arrives; answered at once, the stream can reach the caller first.
         LoopbackServer(
             respond = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n",
-            delayMillis = 500,
+            holdResponse = true,
         ).use { server ->
-            val caller = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
-            caller.use {
-                val job = GlobalScope.launch(it) { session.stream(Request(server.url)) }
-                val deadline = System.nanoTime() + 5_000_000_000
-                while (!server.wasConnected && System.nanoTime() < deadline) Thread.sleep(10)
-                assertTrue(server.wasConnected)
+            // The caller only runs when this thread says so, which fixes the order.
+            val caller = ManualDispatcher()
+            val job = GlobalScope.launch(caller) { session.stream(Request(server.url)) }
+            assertTrue(caller.runNext()) // runs up to the switch to Dispatchers.Default
+            assertTrue(server.awaitConnection(seconds = 5))
 
-                // Occupy the caller's thread so the finished stream queues up
-                // behind it, then cancel before it can be handed over.
-                val gate = CountDownLatch(1)
-                it.executor.execute { gate.await() }
-                Thread.sleep(1500)
-                job.cancel()
-                gate.countDown()
-                runBlocking { job.join() }
-                assertTrue("stream reached the caller before the cancel", job.isCancelled)
-            }
+            // The request can only complete now, and completing it queues the
+            // return to the caller, carrying the open stream.
+            server.releaseResponse()
+            val handOver = caller.awaitNext(seconds = 10)
+            assertTrue("stream never finished opening", handOver != null)
+
+            job.cancel()
+            handOver!!.run()
+            while (!job.isCompleted && caller.runNext()) Unit
+            assertTrue(job.isCompleted)
             // Unclosed, the stream would hold its connection for two minutes.
             assertTrue("stream discarded on the way back was left open", server.hungUpWithin(seconds = 10))
         }
@@ -203,16 +202,19 @@ class LifecycleTest {
 /**
  * A one-shot HTTP/1.1 server on 127.0.0.1. It reads a request, then after
  * [delayMillis] writes [respond], or nothing at all if that is null, and
- * holds the connection until the client hangs up.
+ * holds the connection until the client hangs up. With [holdResponse] it
+ * also waits for [releaseResponse] before writing.
  */
 private class LoopbackServer(
     private val respond: String? = null,
     private val delayMillis: Long = 0,
+    holdResponse: Boolean = false,
 ) : AutoCloseable {
     // Not getLoopbackAddress(), which is ::1 on Android.
     private val socket = ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"))
     private val connected = CountDownLatch(1)
     private val hungUp = CountDownLatch(1)
+    private val released = CountDownLatch(if (holdResponse) 1 else 0)
 
     val url = "http://127.0.0.1:${socket.localPort}/"
 
@@ -230,6 +232,7 @@ private class LoopbackServer(
                         tail = (tail shl 8) or b
                     }
                     Thread.sleep(delayMillis)
+                    released.await()
                     respond?.let { r -> it.getOutputStream().apply { write(r.toByteArray()); flush() } }
                     while (input.read() >= 0) Unit
                 }
@@ -244,5 +247,32 @@ private class LoopbackServer(
     /** Whether the client connected at all. */
     val wasConnected: Boolean get() = connected.count == 0L
 
-    override fun close() = socket.close()
+    /** Waits for the client to connect. */
+    fun awaitConnection(seconds: Long): Boolean = connected.await(seconds, TimeUnit.SECONDS)
+
+    /** Lets a held response go out. */
+    fun releaseResponse() = released.countDown()
+
+    override fun close() {
+        released.countDown()
+        socket.close()
+    }
+}
+
+/**
+ * Runs the coroutines dispatched to it only when the test asks, one task at a
+ * time on the test's thread, so the test decides what happens in which order.
+ */
+private class ManualDispatcher : CoroutineDispatcher() {
+    private val tasks = LinkedBlockingQueue<Runnable>()
+
+    override fun dispatch(context: CoroutineContext, block: Runnable) {
+        tasks.add(block)
+    }
+
+    /** Waits for the next task without running it. */
+    fun awaitNext(seconds: Long): Runnable? = tasks.poll(seconds, TimeUnit.SECONDS)
+
+    /** Runs the next task, waiting up to [seconds] for one. */
+    fun runNext(seconds: Long = 5): Boolean = awaitNext(seconds)?.let { it.run(); true } ?: false
 }
