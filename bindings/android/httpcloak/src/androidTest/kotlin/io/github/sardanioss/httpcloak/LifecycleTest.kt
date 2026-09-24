@@ -20,6 +20,7 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingDeque
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -167,18 +168,21 @@ class LifecycleTest {
             // The caller only runs when this thread says so, which fixes the order.
             val caller = ManualDispatcher()
             val job = GlobalScope.launch(caller) { session.stream(Request(server.url)) }
-            assertTrue(caller.runNext()) // runs up to the switch to Dispatchers.Default
-            assertTrue(server.awaitConnection(seconds = 5))
+            try {
+                assertTrue(caller.runNext()) // runs up to the switch to Dispatchers.Default
+                assertTrue(server.awaitConnection(seconds = 5))
 
-            // The request can only complete now, and completing it queues the
-            // return to the caller, carrying the open stream.
-            server.releaseResponse()
-            val handOver = caller.awaitNext(seconds = 10)
-            assertTrue("stream never finished opening", handOver != null)
-
-            job.cancel()
-            handOver!!.run()
-            while (!job.isCompleted && caller.runNext()) Unit
+                // The request can only complete now, and completing it queues the
+                // return to the caller, carrying the open stream.
+                server.releaseResponse()
+                assertTrue("stream never finished opening", caller.awaitQueued(seconds = 10))
+            } finally {
+                // Cancel before the return runs. On a failed assertion this also
+                // keeps the coroutine from being left suspended with a stream.
+                job.cancel()
+                server.releaseResponse()
+                while (!job.isCompleted && caller.runNext()) Unit
+            }
             assertTrue(job.isCompleted)
             // Unclosed, the stream would hold its connection for two minutes.
             assertTrue("stream discarded on the way back was left open", server.hungUpWithin(seconds = 10))
@@ -264,15 +268,20 @@ private class LoopbackServer(
  * time on the test's thread, so the test decides what happens in which order.
  */
 private class ManualDispatcher : CoroutineDispatcher() {
-    private val tasks = LinkedBlockingQueue<Runnable>()
+    private val tasks = LinkedBlockingDeque<Runnable>()
 
     override fun dispatch(context: CoroutineContext, block: Runnable) {
-        tasks.add(block)
+        tasks.addLast(block)
     }
 
-    /** Waits for the next task without running it. */
-    fun awaitNext(seconds: Long): Runnable? = tasks.poll(seconds, TimeUnit.SECONDS)
+    /** Waits for a task to be queued, and leaves it there for [runNext]. */
+    fun awaitQueued(seconds: Long): Boolean {
+        val task = tasks.pollFirst(seconds, TimeUnit.SECONDS) ?: return false
+        tasks.addFirst(task)
+        return true
+    }
 
     /** Runs the next task, waiting up to [seconds] for one. */
-    fun runNext(seconds: Long = 5): Boolean = awaitNext(seconds)?.let { it.run(); true } ?: false
+    fun runNext(seconds: Long = 5): Boolean =
+        tasks.pollFirst(seconds, TimeUnit.SECONDS)?.let { it.run(); true } ?: false
 }
