@@ -54,7 +54,7 @@ public class Response internal constructor(
          * body when it came separately; otherwise it is read from the JSON.
          */
         fun fromJson(json: String, body: ByteArray?, elapsedMillis: Long): Response {
-            val obj = JSONObject(checked(json))
+            val obj = checkedObject(json)
             return Response(
                 statusCode = obj.getInt("status_code"),
                 headers = obj.optJSONObject("headers").toHeaderMap(),

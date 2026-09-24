@@ -141,30 +141,50 @@ internal fun percentEncode(s: String): String = buildString {
 internal fun Request.urlWithParams(): String {
     if (params.isEmpty()) return url
     val query = params.entries.joinToString("&") { (k, v) -> percentEncode(k) + "=" + percentEncode(v) }
-    return url + (if ('?' in url) "&" else "?") + query
+    // The query goes before any fragment, which never reaches the server.
+    val hash = url.indexOf('#')
+    val base = if (hash < 0) url else url.substring(0, hash)
+    val fragment = if (hash < 0) "" else url.substring(hash)
+    val separator = when {
+        '?' !in base -> "?"
+        base.endsWith('?') || base.endsWith('&') -> ""
+        else -> "&"
+    }
+    return base + separator + query + fragment
 }
 
 /** The headers to send once auth, per-request cookies and the body type are applied. */
 internal fun Request.effectiveHeaders(sessionAuth: Pair<String, String>?): Map<String, String> {
     val out = LinkedHashMap(headers)
-    fun has(name: String) = out.keys.any { it.equals(name, ignoreCase = true) }
 
     (auth ?: sessionAuth)?.let { (user, password) ->
-        out["Authorization"] = "Basic " + base64Encode("$user:$password".toByteArray())
+        out.replaceHeader("Authorization") { "Basic " + base64Encode("$user:$password".toByteArray()) }
     }
     if (cookies.isNotEmpty()) {
         val jar = cookies.entries.joinToString("; ") { (k, v) -> "$k=$v" }
-        out["Cookie"] = out["Cookie"]?.takeIf { it.isNotEmpty() }?.let { "$it; $jar" } ?: jar
+        out.replaceHeader("Cookie") { current -> if (current.isEmpty()) jar else "$current; $jar" }
     }
-    body?.contentType?.let { if (!has("Content-Type")) out["Content-Type"] = it }
+    body?.contentType?.let { type ->
+        if (out.keys.none { it.equals("Content-Type", ignoreCase = true) }) out["Content-Type"] = type
+    }
     return out
+}
+
+/**
+ * Sets header [name] to what [value] makes of its current values, joined as
+ * a Cookie header joins them. Names ignore case: every spelling the caller
+ * used folds into one entry, which keeps the first spelling.
+ */
+private fun MutableMap<String, String>.replaceHeader(name: String, value: (current: String) -> String) {
+    val spellings = keys.filter { it.equals(name, ignoreCase = true) }
+    val current = spellings.mapNotNull { this[it]?.takeIf(String::isNotEmpty) }.joinToString("; ")
+    spellings.forEach { remove(it) }
+    this[spellings.firstOrNull() ?: name] = value(current)
 }
 
 /**
  * The request as the C API's RequestConfig JSON.
  *
- * @param timeoutSeconds the timeout to send, which the blocking path fills in
- *   from the session when the request has none.
  * @param timeoutMillis the raw entry point reads "timeout" in milliseconds,
  *   the async and stream ones in seconds.
  * @param inlineBody whether the body travels inside the JSON (base64) rather
@@ -172,7 +192,6 @@ internal fun Request.effectiveHeaders(sessionAuth: Pair<String, String>?): Map<S
  */
 internal fun Request.toJson(
     sessionAuth: Pair<String, String>?,
-    timeoutSeconds: Int?,
     timeoutMillis: Boolean,
     inlineBody: Boolean,
 ): String {
@@ -188,7 +207,7 @@ internal fun Request.toJson(
     if (inlineBody && body != null && body.bytes.isNotEmpty()) {
         json.put("body", base64Encode(body.bytes)).put("body_encoding", "base64")
     }
-    timeoutSeconds?.let { json.put("timeout", if (timeoutMillis) it * 1000 else it) }
+    timeout?.let { json.put("timeout", if (timeoutMillis) it * 1000 else it) }
     fetchMode?.let { json.put("fetch_mode", it) }
     allowRedirects?.let { json.put("follow_redirects", it) }
     if (disableConditionalCache) json.put("disable_conditional_cache", true)

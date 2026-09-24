@@ -21,6 +21,17 @@ internal fun checked(result: String?): String {
     return result ?: throw HttpCloakException("httpcloak returned no result")
 }
 
+/**
+ * [result] as a JSON object, or throws if the library reported an error
+ * instead. Parses once, unlike JSONObject(checked(result)), which matters for
+ * a response carrying its whole body.
+ */
+internal fun checkedObject(result: String?): JSONObject {
+    val obj = JSONObject(result ?: throw HttpCloakException("httpcloak returned no result"))
+    if (obj.has("error")) throw HttpCloakException(obj.optString("error"))
+    return obj
+}
+
 /** An async error is either a JSON error object or a bare message. */
 internal fun asyncErrorMessage(error: String?): String =
     errorIn(error) ?: error?.takeIf { it.isNotEmpty() } ?: "request failed"
