@@ -135,7 +135,7 @@ func httpcloak_get_fast_timed(handle C.int64_t, url *C.char, urlLen C.int, timin
 
 	t2 := time.Now()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), sessionDefaultTimeout(session))
 	defer cancel()
 
 	req := &httpcloak.Request{
@@ -238,7 +238,7 @@ func httpcloak_get_fast(handle C.int64_t, url *C.char, urlLen C.int) (hcRet C.in
 	// Use C.GoStringN which is optimized for known-length strings
 	urlStr := C.GoStringN(url, urlLen)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), sessionDefaultTimeout(session))
 	defer cancel()
 
 	req := &httpcloak.Request{

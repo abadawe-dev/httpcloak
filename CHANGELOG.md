@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`httpcloak_stream_request` failures now say why**: it returned -1 without recording a reason, so every failure, from invalid request JSON to a refused connection, surfaced as the same generic message. The reason is now available from `httpcloak_last_error`, as it already was for `httpcloak_request_raw`.
 
+- **Synchronous requests no longer stop at 30 seconds regardless of the session's timeout**: `httpcloak_request_raw`, `httpcloak_request`, the get/post variants and the fast paths bounded a request without a per-request timeout at a flat 30s, so a session configured with a longer timeout was cut short unless every call repeated it. They now fall back to the session's own timeout, and to 30s only for a session without one. A restored session, whose timeout a binding cannot read back, was hit hardest.
+
+- **A session cache getter's result is copied before it can go stale**: the library read the string a `get` or ECH `get` callback returned only after the C call had returned, by which point the goroutine could be on another thread while the original one served another lookup. A callback that reuses or frees its buffer on the next call could hand back another key's value or freed memory. The result is now copied inside the call, and the callback still owns its buffer.
+
+- **An async stream nobody receives is closed**: when a caller cancelled `httpcloak_stream_request_async` by unregistering its callback just as the response arrived, the stream handle was never delivered, and the stream held its connection until its timeout. The library now closes a stream whose result it could not deliver.
+
 ## [1.7.2] - 2026-09-03
 
 Worth taking if you use HTTP/3 with a custom fingerprint. A preset built from a

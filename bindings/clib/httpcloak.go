@@ -3,6 +3,7 @@ package main
 /*
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 
 typedef void (*async_callback)(int64_t callback_id, const char* response_json, const char* error);
 
@@ -34,10 +35,19 @@ static void invoke_callback(async_callback cb, int64_t callback_id, const char* 
     }
 }
 
+// A getter's result stays owned by the callback, which may reuse or free it on
+// its next call. Go only reads it after the cgo call has returned, and by then
+// the goroutine can be running on another thread while this one serves another
+// lookup, so copy it here, still inside the call. The copy is the caller's
+// (Go's) to free.
+static char* copy_cache_result(const char* result) {
+    return result != NULL ? strdup(result) : NULL;
+}
+
 // Helper functions to invoke SYNC session cache callbacks
 static char* invoke_cache_get(session_cache_get_callback cb, const char* key) {
     if (cb != NULL) {
-        return cb(key);
+        return copy_cache_result(cb(key));
     }
     return NULL;
 }
@@ -64,7 +74,7 @@ static int invoke_cache_delete(session_cache_delete_callback cb, const char* key
 
 static char* invoke_ech_get(ech_cache_get_callback cb, const char* key) {
     if (cb != NULL) {
-        return cb(key);
+        return copy_cache_result(cb(key));
     }
     return NULL;
 }
@@ -981,7 +991,7 @@ func httpcloak_get_raw(handle C.int64_t, url *C.char, optionsJSON *C.char) (hcRe
 	if options.Timeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(options.Timeout)*time.Millisecond)
 	} else {
-		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, sessionDefaultTimeout(session))
 	}
 	defer cancel()
 
@@ -1057,7 +1067,7 @@ func httpcloak_post_raw(handle C.int64_t, url *C.char, body *C.char, bodyLen C.i
 	if options.Timeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(options.Timeout)*time.Millisecond)
 	} else {
-		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, sessionDefaultTimeout(session))
 	}
 	defer cancel()
 
@@ -1129,7 +1139,7 @@ func httpcloak_request_raw(handle C.int64_t, requestJSON *C.char, body *C.char, 
 	if config.Timeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(config.Timeout)*time.Millisecond)
 	} else {
-		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, sessionDefaultTimeout(session))
 	}
 	defer cancel()
 
@@ -1526,6 +1536,17 @@ func getSession(handle C.int64_t) *httpcloak.Session {
 	return sessions[int64(handle)]
 }
 
+// sessionDefaultTimeout bounds a synchronous request that carries no timeout
+// of its own. It is the session's configured timeout, so a session created or
+// restored with a longer one is not cut short at 30s, and 30s only for a
+// session that has none.
+func sessionDefaultTimeout(session *httpcloak.Session) time.Duration {
+	if t := session.GetTransport(); t != nil && t.Timeout() > 0 {
+		return t.Timeout()
+	}
+	return 30 * time.Second
+}
+
 //export httpcloak_session_fork
 func httpcloak_session_fork(handle C.int64_t) (hcRet C.int64_t) {
 	defer guardInt64("httpcloak_session_fork", &hcRet)
@@ -1619,7 +1640,7 @@ func httpcloak_get(handle C.int64_t, url *C.char, optionsJSON *C.char) (hcRet *C
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(options.Timeout)*time.Millisecond)
 	} else {
 		// Default 30s timeout to prevent indefinite hangs (especially for MASQUE)
-		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, sessionDefaultTimeout(session))
 	}
 	defer cancel()
 
@@ -1672,7 +1693,7 @@ func httpcloak_post(handle C.int64_t, url *C.char, body *C.char, optionsJSON *C.
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(options.Timeout)*time.Millisecond)
 	} else {
 		// Default 30s timeout to prevent indefinite hangs (especially for MASQUE)
-		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, sessionDefaultTimeout(session))
 	}
 	defer cancel()
 
@@ -1736,7 +1757,7 @@ func httpcloak_request(handle C.int64_t, requestJSON *C.char) (hcRet *C.char) {
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(config.Timeout)*time.Second)
 	} else {
 		// Default 30s timeout to prevent indefinite hangs (especially for MASQUE)
-		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, sessionDefaultTimeout(session))
 	}
 	defer cancel()
 
@@ -1806,7 +1827,9 @@ func httpcloak_cancel_request(callbackID C.int64_t) {
 	}
 }
 
-func invokeCallback(callbackID int64, responseJSON string, errStr string) {
+// invokeCallback reports whether the result reached a registered callback. It
+// does not when the caller unregistered the ID first, typically on cancel.
+func invokeCallback(callbackID int64, responseJSON string, errStr string) bool {
 	callbackMu.Lock()
 	callback, exists := asyncCallbacks[callbackID]
 	// Auto-cleanup: remove callback and cancel func after retrieval to prevent memory leaks
@@ -1817,7 +1840,7 @@ func invokeCallback(callbackID int64, responseJSON string, errStr string) {
 	callbackMu.Unlock()
 
 	if !exists {
-		return
+		return false
 	}
 
 	var respC *C.char
@@ -1838,6 +1861,7 @@ func invokeCallback(callbackID int64, responseJSON string, errStr string) {
 	if errC != nil {
 		C.free(unsafe.Pointer(errC))
 	}
+	return true
 }
 
 //export httpcloak_get_async
@@ -2827,10 +2851,9 @@ func (c *CSessionCacheBackend) Get(ctx context.Context, key string) (*transport.
 	if resultC == nil {
 		return nil, nil // Not found
 	}
-	// Note: Don't free resultC - it's managed by the callback caller (Python/Node)
-	// We only copy the string data with C.GoString
-
+	// resultC is invoke_cache_get's own copy; the callback's buffer is untouched.
 	resultJSON := C.GoString(resultC)
+	C.free(unsafe.Pointer(resultC))
 	if resultJSON == "" {
 		return nil, nil
 	}
@@ -2899,9 +2922,9 @@ func (c *CSessionCacheBackend) GetECHConfig(ctx context.Context, key string) ([]
 	if resultC == nil {
 		return nil, nil // Not found
 	}
-	// Note: Don't free resultC - it's managed by the callback caller (Python/Node)
-
+	// resultC is invoke_ech_get's own copy; the callback's buffer is untouched.
 	resultBase64 := C.GoString(resultC)
+	C.free(unsafe.Pointer(resultC))
 	if resultBase64 == "" {
 		return nil, nil
 	}
@@ -3988,10 +4011,15 @@ func httpcloak_stream_request_async(sessionHandle C.int64_t, requestJSON *C.char
 		meta.StreamHandle = handle
 		metaJSON, err := json.Marshal(meta)
 		if err != nil {
+			httpcloak_stream_close(C.int64_t(handle))
 			fail("encode stream metadata: " + err.Error())
 			return
 		}
-		invokeCallback(int64(callbackID), string(metaJSON), "")
+		// A caller that cancelled by unregistering the callback never learns
+		// this handle, so nothing else would ever close the stream.
+		if !invokeCallback(int64(callbackID), string(metaJSON), "") {
+			httpcloak_stream_close(C.int64_t(handle))
+		}
 	}()
 }
 
