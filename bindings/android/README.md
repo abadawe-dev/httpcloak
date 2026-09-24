@@ -87,7 +87,8 @@ cloudflare.com:
 ```
 
 Pick the ABI your device runs. A 64-bit ARM phone can also run the `armeabi-v7a` build,
-which is how the 32-bit library is tested.
+which is how the 32-bit ARM library is tested. For `x86`, use an emulator with an API 30
+`x86_64` image: newer `x86_64` images are 64-bit only and refuse to install it.
 
 ## Versioning
 
