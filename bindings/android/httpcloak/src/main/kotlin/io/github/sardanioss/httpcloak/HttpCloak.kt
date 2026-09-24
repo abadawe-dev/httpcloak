@@ -49,11 +49,11 @@ public object HttpCloak {
 
     /** Registers a custom preset from its JSON definition and returns its name. */
     @JvmStatic
-    public fun loadPreset(json: String): String = JSONObject(checked(Native.presetLoadJson(json))).getString("name")
+    public fun loadPreset(json: String): String = checkedObject(Native.presetLoadJson(json)).getString("name")
 
     /** Registers a custom preset from a JSON file and returns its name. */
     @JvmStatic
-    public fun loadPresetFile(path: String): String = JSONObject(checked(Native.presetLoadFile(path))).getString("name")
+    public fun loadPresetFile(path: String): String = checkedObject(Native.presetLoadFile(path)).getString("name")
 
     @JvmStatic
     public fun unregisterPreset(name: String): Unit = Native.presetUnregister(name)
@@ -103,6 +103,6 @@ public class PresetPool private constructor(private val handle: Long) : java.io.
         @JvmStatic
         public fun fromFile(path: String): PresetPool = fromResult(Native.poolLoadFile(path))
 
-        private fun fromResult(result: String) = PresetPool(JSONObject(checked(result)).getLong("handle"))
+        private fun fromResult(result: String) = PresetPool(checkedObject(result).getLong("handle"))
     }
 }

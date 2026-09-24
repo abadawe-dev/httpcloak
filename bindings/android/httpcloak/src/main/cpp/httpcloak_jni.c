@@ -123,8 +123,9 @@ static void on_async_result(int64_t callback_id, const char *response_json, cons
     detach(env, attached);
 }
 
-// The library copies a string returned by a cache getter and never frees it.
-// Each thread keeps its latest answer alive and frees it on its next call.
+// The library never frees a string returned by a cache getter; it copies it
+// before the getter's C call returns, on this same thread. Each thread keeps
+// its latest answer alive only that long and frees it on its next call.
 static __thread char *t_cache_value;
 
 static char *cache_lookup(jmethodID method, const char *key) {

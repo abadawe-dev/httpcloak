@@ -80,6 +80,8 @@ val ndkHostTag = when {
     else -> "linux-x86_64"
 }
 val clangSuffix = if (OperatingSystem.current().isWindows) "-clang.cmd" else "-clang"
+// A new Go toolchain has to rebuild the library even when no source changed.
+val goVersion = providers.exec { commandLine("go", "env", "GOVERSION") }.standardOutput.asText.map { it.trim() }
 
 val goBuildTasks = abis.map { abi ->
     val (goArch, triple) = goTargets[abi] ?: error("Unsupported ABI in httpcloak.abis: $abi")
@@ -88,19 +90,24 @@ val goBuildTasks = abis.map { abi ->
         it.file("toolchains/llvm/prebuilt/$ndkHostTag/bin/$triple$minSdkVersion$clangSuffix").asFile.path
     }
 
+    val goEnv = mapOf("CGO_ENABLED" to "1", "GOOS" to "android", "GOARCH" to goArch) +
+        (if (goArch == "arm") mapOf("GOARM" to "7") else emptyMap())
+
     tasks.register<Exec>("buildGo-$abi") {
         description = "Cross-compiles libhttpcloak.so for $abi."
+        // Sources, plus the files they //go:embed (the browser presets).
         inputs.files(fileTree(repoRoot) {
-            include("**/*.go", "**/go.mod", "**/go.sum")
+            include("**/*.go", "**/go.mod", "**/go.sum", "fingerprint/embedded/**")
             exclude("**/*_test.go", "bindings/android/**", "examples/**", "tests/**")
         })
+        // Exec tracks the command line but not the environment or toolchain.
+        inputs.property("goEnv", goEnv)
+        inputs.property("goVersion", goVersion)
+        inputs.property("compiler", compiler)
         outputs.dir(outDir)
 
         workingDir(repoRoot.resolve("bindings/clib"))
-        environment("CGO_ENABLED", "1")
-        environment("GOOS", "android")
-        environment("GOARCH", goArch)
-        if (goArch == "arm") environment("GOARM", "7")
+        environment(goEnv)
         doFirst { environment("CC", compiler.get()) }
         // The soname lets the JNI bridge find this library by name at runtime,
         // and 16 KB alignment is required by Android 15+ devices and Play.

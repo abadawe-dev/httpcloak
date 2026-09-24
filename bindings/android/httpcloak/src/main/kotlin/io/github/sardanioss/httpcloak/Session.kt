@@ -1,9 +1,12 @@
 package io.github.sardanioss.httpcloak
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * An HTTP client whose TLS, HTTP/2 and HTTP/3 fingerprints match a real
@@ -17,15 +20,11 @@ import java.util.concurrent.atomic.AtomicLong
  *
  * Close the session when done with it to release its connections.
  */
-public class Session private constructor(
-    handle: Long,
-    /** The configured timeout, which the blocking path must pass explicitly. */
-    private val configuredTimeout: Int?,
-) : Closeable {
+public class Session private constructor(handle: Long) : Closeable {
     private val handleRef = AtomicLong(handle)
 
     @JvmOverloads
-    public constructor(config: SessionConfig = SessionConfig()) : this(create(config), config.timeout)
+    public constructor(config: SessionConfig = SessionConfig()) : this(create(config))
 
     public constructor(preset: String) : this(SessionConfig(preset = preset))
 
@@ -42,14 +41,16 @@ public class Session private constructor(
 
     /**
      * Sends [request] and suspends until the whole response has been read.
-     * Cancelling the calling coroutine aborts the request.
+     * Cancelling the calling coroutine aborts the request. Encoding the request
+     * and decoding the response, both proportional to the body, run on
+     * [Dispatchers.Default] rather than the caller's dispatcher.
      */
-    public suspend fun request(request: Request): Response {
+    public suspend fun request(request: Request): Response = withContext(Dispatchers.Default) {
         val session = handle
-        val json = request.toJson(auth, request.timeout, timeoutMillis = false, inlineBody = true)
+        val json = request.toJson(auth, timeoutMillis = false, inlineBody = true)
         val start = System.nanoTime()
         val result = NativeCallbacks.await { id -> Native.requestAsync(session, json, id) }
-        return Response.fromJson(result, null, millisSince(start))
+        Response.fromJson(result, null, millisSince(start))
     }
 
     /**
@@ -58,8 +59,7 @@ public class Session private constructor(
      */
     public fun execute(request: Request): Response {
         val session = handle
-        val timeout = request.timeout ?: configuredTimeout
-        val json = request.toJson(auth, timeout, timeoutMillis = true, inlineBody = false)
+        val json = request.toJson(auth, timeoutMillis = true, inlineBody = false)
         val start = System.nanoTime()
         val response = Native.requestRaw(session, json, request.body?.bytes)
         if (response < 0) throw lastError(session)
@@ -125,25 +125,42 @@ public class Session private constructor(
      * Sends [request] and suspends until the response headers arrive; the body
      * is then read from [StreamResponse.body]. Cancelling before the headers
      * arrive aborts the request. [Request.timeout] bounds the whole stream,
-     * and defaults to two minutes.
+     * and defaults to two minutes. As with [request], encoding the request and
+     * handing it to the library run on [Dispatchers.Default].
      */
     public suspend fun stream(request: Request): StreamResponse {
         val session = handle
-        val json = request.toJson(auth, request.timeout, timeoutMillis = false, inlineBody = true)
-        val result = NativeCallbacks.await(
-            onDropped = { Native.streamClose(JSONObject(it).optLong("stream_handle")) },
-        ) { id -> Native.streamRequestAsync(session, json, id) }
-        val metadata = JSONObject(checked(result))
-        return StreamResponse(metadata.getLong("stream_handle"), metadata)
+        val opened = AtomicReference<StreamResponse?>()
+        try {
+            return withContext(Dispatchers.Default) {
+                val json = request.toJson(auth, timeoutMillis = false, inlineBody = true)
+                val result = NativeCallbacks.await(
+                    onDropped = { Native.streamClose(JSONObject(it).optLong("stream_handle")) },
+                ) { id -> Native.streamRequestAsync(session, json, id) }
+                val metadata = checkedObject(result)
+                val stream = metadata.getLong("stream_handle")
+                try {
+                    StreamResponse(stream, metadata).also { opened.set(it) }
+                } catch (e: Throwable) {
+                    Native.streamClose(stream)
+                    throw e
+                }
+            }
+        } catch (e: Throwable) {
+            // withContext discards its result when the caller is cancelled on
+            // the way back, and that result is an open stream.
+            opened.get()?.close()
+            throw e
+        }
     }
 
     /** Blocking counterpart of [stream]. Do not call this on the main thread. */
     public fun executeStream(request: Request): StreamResponse {
         val session = handle
-        val json = request.toJson(auth, request.timeout, timeoutMillis = false, inlineBody = true)
+        val json = request.toJson(auth, timeoutMillis = false, inlineBody = true)
         val stream = Native.streamRequest(session, json)
         if (stream < 0) throw lastError(session)
-        return StreamResponse(stream, JSONObject(checked(Native.streamGetMetadata(stream))))
+        return StreamResponse(stream, checkedObject(Native.streamGetMetadata(stream)))
     }
 
     /**
@@ -179,7 +196,7 @@ public class Session private constructor(
     public fun fork(): Session {
         val forked = Native.sessionFork(handle)
         if (forked <= 0) throw HttpCloakException("could not fork session")
-        return Session(forked, configuredTimeout).also { it.auth = auth }
+        return Session(forked).also { it.auth = auth }
     }
 
     /**
@@ -320,7 +337,7 @@ public class Session private constructor(
         public fun load(path: String): Session {
             val h = Native.sessionLoad(path)
             if (h <= 0) throw HttpCloakException("could not load session from $path")
-            return Session(h, null)
+            return Session(h)
         }
 
         /** Restores a session from [marshal] output. */
@@ -328,7 +345,7 @@ public class Session private constructor(
         public fun unmarshal(data: String): Session {
             val h = Native.sessionUnmarshal(data)
             if (h <= 0) throw HttpCloakException("could not restore session")
-            return Session(h, null)
+            return Session(h)
         }
 
         private fun create(config: SessionConfig): Long {
