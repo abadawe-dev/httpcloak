@@ -72,6 +72,10 @@ if [ -f "$SCRIPT_DIR/dotnet/HttpCloak/HttpCloak.csproj" ]; then
     sed -i "s/<Version>[0-9]*\.[0-9]*\.[0-9]*<\/Version>/<Version>$NEW_VERSION<\/Version>/" HttpCloak.csproj
 fi
 
+# Update Android library version
+echo "  -> android/httpcloak/build.gradle.kts"
+sed -i "s/^version = \"[0-9]*\.[0-9]*\.[0-9]*\"/version = \"$NEW_VERSION\"/" "$SCRIPT_DIR/android/httpcloak/build.gradle.kts"
+
 echo ""
 echo "Version bumped to $NEW_VERSION successfully!"
 echo ""
@@ -82,6 +86,7 @@ echo "  - bindings/python/pyproject.toml"
 echo "  - bindings/python/httpcloak/__init__.py"
 echo "  - bindings/clib/httpcloak.go"
 echo "  - bindings/dotnet/HttpCloak/HttpCloak.csproj (if exists)"
+echo "  - bindings/android/httpcloak/build.gradle.kts"
 echo ""
 echo "Next steps:"
 echo "  1. Rebuild native libraries: cd bindings && make build"

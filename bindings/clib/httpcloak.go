@@ -3802,6 +3802,7 @@ func httpcloak_stream_request(sessionHandle C.int64_t, requestJSON *C.char) (hcR
 	if requestJSON != nil {
 		jsonStr := C.GoString(requestJSON)
 		if err := json.Unmarshal([]byte(jsonStr), &config); err != nil {
+			setLastError(sessionHandle, "request JSON is not valid: %v", err)
 			return -1
 		}
 	}
@@ -3824,6 +3825,8 @@ func httpcloak_stream_request(sessionHandle C.int64_t, requestJSON *C.char) (hcR
 		bodyBytes, err := decodeRequestBody(config.Body, config.BodyEncoding)
 		if err != nil {
 			cancel()
+			setLastError(sessionHandle, "request body could not be decoded as %s: %v",
+				config.BodyEncoding, err)
 			return -1
 		}
 		bodyReader = bytes.NewReader(bodyBytes)
@@ -3846,6 +3849,7 @@ func httpcloak_stream_request(sessionHandle C.int64_t, requestJSON *C.char) (hcR
 	resp, err := session.DoStream(ctx, req)
 	if err != nil {
 		cancel()
+		setLastError(sessionHandle, "%v", err)
 		return -1
 	}
 
@@ -4081,15 +4085,20 @@ func httpcloak_stream_read_raw(streamHandle C.int64_t, buffer unsafe.Pointer, bu
 	// Create a Go slice backed by the C buffer
 	buf := (*[1 << 30]byte)(buffer)[:size:size]
 
+	// A reader may return the last bytes together with io.EOF. Hand those
+	// bytes over first; the next call reports the EOF (or error) on its own.
 	n, err := stream.Read(buf)
+	if n > 0 {
+		return C.int(n)
+	}
 	if err != nil {
-		if err.Error() == "EOF" {
+		if errors.Is(err, io.EOF) {
 			return 0 // EOF
 		}
 		return -1 // Error
 	}
 
-	return C.int(n)
+	return 0
 }
 
 //export httpcloak_stream_close
