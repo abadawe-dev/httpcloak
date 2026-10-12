@@ -14,6 +14,7 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
+	"github.com/sardanioss/httpcloak/internal/compress"
 	"github.com/sardanioss/httpcloak/protocol"
 )
 
@@ -305,6 +306,11 @@ func setupDecompressor(body io.ReadCloser, encoding string) (io.ReadCloser, io.C
 			return body, nil
 		}
 		return &zstdReadCloser{decoder}, nil
+	case "deflate":
+		// This case was missing, so a streamed deflate response came back
+		// still compressed even though Accept-Encoding offers deflate.
+		reader := compress.NewDeflateReader(body)
+		return reader, reader
 	default:
 		return body, nil
 	}

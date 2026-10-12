@@ -41,7 +41,6 @@ package client
 
 import (
 	"bytes"
-	"compress/flate"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -64,6 +63,7 @@ import (
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
 	"github.com/sardanioss/httpcloak/fingerprint"
+	"github.com/sardanioss/httpcloak/internal/compress"
 	"github.com/sardanioss/httpcloak/pool"
 	"github.com/sardanioss/httpcloak/protocol"
 	"github.com/sardanioss/httpcloak/transport"
@@ -2366,9 +2366,8 @@ func decompress(data []byte, encoding string) ([]byte, error) {
 		return io.ReadAll(decoder)
 
 	case "deflate":
-		reader := flate.NewReader(bytes.NewReader(data))
-		defer reader.Close()
-		return io.ReadAll(reader)
+		// zlib-framed (RFC 9110) or raw, decided the way Chrome decides.
+		return compress.InflateDeflate(data)
 
 	case "", "identity":
 		return data, nil
