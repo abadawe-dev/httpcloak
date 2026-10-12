@@ -56,7 +56,11 @@ func flattenToSpec(p *Preset) (*PresetSpec, error) {
 
 	spec.Headers = flattenHeaders(p)
 	spec.HTTP2 = flattenHTTP2(p)
-	if p.SupportHTTP3 {
+	// A preset can carry an HTTP/3 profile without advertising HTTP/3 by
+	// default (safari-17-ios does), and a session forced onto HTTP/3 still
+	// uses it. Gating the export on SupportHTTP3 alone dropped that profile,
+	// so the described preset loaded back with Chrome's QUIC settings.
+	if p.SupportHTTP3 || p.H3Config != nil {
 		spec.HTTP3 = flattenHTTP3(p)
 	}
 	if tcp := flattenTCP(p); tcp != nil {
@@ -210,6 +214,10 @@ func flattenHeaders(p *Preset) *HeaderSpec {
 			out.Order[i] = HeaderPairSpec{Key: hp.Key, Value: hp.Value}
 		}
 	}
+	// Only when set: an empty value means the pre-155 default, and writing that
+	// default out would pin it on a described preset that should keep
+	// following ResolveImageAccept.
+	out.ImageAccept = p.ImageAccept
 	return out
 }
 

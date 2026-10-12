@@ -237,9 +237,16 @@ func TestDescribe_NoBasedOnInOutput(t *testing.T) {
 	}
 }
 
-// TestDescribe_HTTP3OnlyWhenSupported ensures HTTP3 section is omitted for
-// presets that don't support it, and present for those that do. The plan's
-// SupportHTTP3 round-trip contract depends on this.
+// TestDescribe_HTTP3OnlyWhenSupported ensures the HTTP3 section is present for
+// presets that support HTTP/3 or carry their own HTTP/3 profile, and omitted
+// otherwise.
+//
+// It used to require omission whenever SupportHTTP3 was false. That dropped
+// the profile of a preset that has one but does not advertise HTTP/3 by
+// default (safari-17-ios), so a session forced onto HTTP/3 with the described
+// preset used Chrome's QUIC settings. SupportHTTP3 itself still round-trips:
+// describe always writes protocol.http3 explicitly, and
+// TestDescribeRoundTripsEveryPreset asserts it for every preset.
 func TestDescribe_HTTP3OnlyWhenSupported(t *testing.T) {
 	for _, name := range Available() {
 		p := GetStrict(name)
@@ -254,8 +261,11 @@ func TestDescribe_HTTP3OnlyWhenSupported(t *testing.T) {
 		if p.SupportHTTP3 && pf.Preset.HTTP3 == nil {
 			t.Errorf("%s: SupportHTTP3=true but http3 section missing", name)
 		}
-		if !p.SupportHTTP3 && pf.Preset.HTTP3 != nil {
-			t.Errorf("%s: SupportHTTP3=false but http3 section present", name)
+		if !p.SupportHTTP3 && p.H3Config == nil && pf.Preset.HTTP3 != nil {
+			t.Errorf("%s: no HTTP/3 support or profile, but http3 section present", name)
+		}
+		if p.H3Config != nil && pf.Preset.HTTP3 == nil {
+			t.Errorf("%s: carries an HTTP/3 profile, but http3 section missing", name)
 		}
 	}
 }
