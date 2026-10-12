@@ -142,6 +142,11 @@ func flattenTLS(p *Preset) (*TLSSpec, error) {
 		}
 	}
 
+	if p.QUICTrustAnchorShuffle {
+		v := true
+		out.QUICTrustAnchorsShuffle = &v
+	}
+
 	if out.ClientHello == "" && out.JA3 == "" {
 		// Preset has no TLS configuration at all. Drop the TLS section.
 		return nil, nil

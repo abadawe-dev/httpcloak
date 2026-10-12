@@ -15,6 +15,7 @@ import (
 	"io"
 	"math/big"
 	"net"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -179,10 +180,10 @@ func TestTrustAnchorsAreStableOnTheWire(t *testing.T) {
 		}
 	}()
 
-	sess := NewSession("chrome-153-linux", WithInsecureSkipVerify(), WithForceHTTP1())
+	sess := NewSession("chrome-155-linux", WithInsecureSkipVerify(), WithForceHTTP1())
 	defer sess.Close()
 
-	const want = 4
+	const want = 12
 	for i := 0; i < want; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		resp, err := sess.Get(ctx, "https://127.0.0.1:"+portOf(ln)+"/")
@@ -204,7 +205,13 @@ func TestTrustAnchorsAreStableOnTheWire(t *testing.T) {
 
 	anchors := map[string]int{}
 	orders := map[string]int{}
+	positions := map[int]int{}
 	for _, c := range caps {
+		for i, id := range c.order {
+			if id == 0xCA34 {
+				positions[i]++
+			}
+		}
 		if len(c.anchor) == 0 {
 			t.Fatal("a ClientHello carried no trust_anchors extension")
 		}
@@ -227,6 +234,23 @@ func TestTrustAnchorsAreStableOnTheWire(t *testing.T) {
 	if len(orders) < 2 {
 		t.Errorf("%d handshakes produced only %d distinct extension order(s); "+
 			"Chrome permutes the extension order on every handshake", len(caps), len(orders))
+	}
+	// The extension itself moves with the permutation. It used to sit in the
+	// same slot on every handshake while everything around it moved.
+	if len(positions) < 3 {
+		t.Errorf("trust_anchors took %d position(s) over %d handshakes: %v; Chrome "+
+			"permutes it with the other extensions", len(positions), len(caps), positions)
+	}
+	// From Chrome 154 the identifiers inside are sorted.
+	for a := range anchors {
+		raw, _ := hex.DecodeString(a)
+		var ids []string
+		for q := raw[2:]; len(q) > 0; q = q[1+int(q[0]):] {
+			ids = append(ids, hex.EncodeToString(q[1:1+int(q[0])]))
+		}
+		if !sort.StringsAreSorted(ids) {
+			t.Errorf("chrome-155 sent its trust anchors unsorted: %v", ids)
+		}
 	}
 }
 

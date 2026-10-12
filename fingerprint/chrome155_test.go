@@ -2,6 +2,7 @@ package fingerprint
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -44,9 +45,10 @@ func TestChrome154And155Presets(t *testing.T) {
 	}
 }
 
-// Neither release touched the TLS layer, so everything below the headers has to
-// reach 154 and 155 through based_on unchanged, and only the expected header
-// values may differ from the version before.
+// Neither release touched the cipher suites, extensions or signature
+// algorithms, so those reach 154 and 155 through based_on unchanged, and only
+// the expected header values may differ from the version before. The one TLS
+// change is the trust_anchors list order, which 154 sorts.
 func TestChrome154And155InheritTheClientHello(t *testing.T) {
 	for _, plat := range []string{"windows", "linux", "macos", "android"} {
 		for _, step := range []struct {
@@ -61,8 +63,10 @@ func TestChrome154And155InheritTheClientHello(t *testing.T) {
 			if fmt.Sprint(new.SignatureAlgorithms) != fmt.Sprint(old.SignatureAlgorithms) {
 				t.Errorf("%s: signature algorithms differ from %d", label, step.from)
 			}
-			if fmt.Sprint(new.TrustAnchors) != fmt.Sprint(old.TrustAnchors) {
-				t.Errorf("%s: trust anchors differ from %d", label, step.from)
+			// Same anchor set throughout. 154 changes only the order, to
+			// sorted; see trust_anchors_order_test.go.
+			if fmt.Sprint(sortedHex(new)) != fmt.Sprint(sortedHex(old)) {
+				t.Errorf("%s: trust anchor set differs from %d", label, step.from)
 			}
 			if diff := headerValueDiff(old, new); len(diff) != step.wantDiff {
 				t.Errorf("%s: %d header values differ from %d, want %d: %v",
@@ -150,4 +154,10 @@ func TestChrome155LatestAliases(t *testing.T) {
 			t.Errorf("%s: UA = %q, want it to contain %q", tc.alias, p.UserAgent, tc.wantUA)
 		}
 	}
+}
+
+func sortedHex(p *Preset) []string {
+	out := anchorHex(p)
+	sort.Strings(out)
+	return out
 }

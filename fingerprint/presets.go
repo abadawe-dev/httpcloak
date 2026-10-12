@@ -153,9 +153,23 @@ type Preset struct {
 	// version, so refreshing it should not need a release. Empty means the
 	// extension is not sent at all, which is every preset before Chrome 152.
 	//
-	// The ORDER here is canonical only. Chrome shuffles the list per
-	// connection, and so does the extension.
+	// The list goes out in exactly this order on TCP, and on QUIC too unless
+	// QUICTrustAnchorShuffle is set. Which order is right depends on the
+	// version: Chrome 154 sorts the identifiers before encoding them
+	// (net/cert/x509_util.cc, EncodeTlsRequestedTrustAnchorIDList), and
+	// Chrome 152 and 153 send them in the iteration order of an
+	// absl::flat_hash_set, which is fixed for a given build but has no
+	// meaning. The extension's POSITION is a separate matter: it takes part in
+	// the ordinary extension permutation on every version.
 	TrustAnchors [][]byte
+
+	// QUICTrustAnchorShuffle reshuffles the anchor list on every QUIC
+	// connection. True for Chrome 152 and 153, which did exactly that while
+	// holding the TCP list fixed; false from 154, where the list is sorted and
+	// identical on both transports. Measured, not inferred: 153.0.8010.52 gave
+	// three payloads over three QUIC connections in one process, and
+	// 155.0.8059.39 gave one sorted payload over three.
+	QUICTrustAnchorShuffle bool
 }
 
 // SpecFor generates the uTLS ClientHelloSpec for id at the given shuffle seed and
@@ -205,9 +219,9 @@ func FreshShuffleSeed() int64 {
 	return int64(binary.LittleEndian.Uint64(b[:]))
 }
 
-// SpecForQUICWithAnchors is SpecForWithAnchors for the QUIC path. The trust
-// anchor list is reshuffled per connection (see ApplyTrustAnchorsPermuted), and
-// so is the extension order.
+// SpecForQUICWithAnchors is SpecForWithAnchors for the QUIC path. The extension
+// order is drawn per connection, and shuffleAnchors (the preset's
+// QUICTrustAnchorShuffle) decides whether the anchor list is too.
 //
 // It ignores seed on purpose, and the parameter is kept only so both spec
 // builders read the same at their call sites. Honouring it is what caused the
@@ -219,13 +233,13 @@ func FreshShuffleSeed() int64 {
 // Drawing here rather than at each call site is deliberate. There is no
 // legitimate reason to pin a QUIC extension order, so the choke point should
 // make it impossible rather than rely on every future caller remembering.
-func SpecForQUICWithAnchors(id tls.ClientHelloID, _ int64, sigAlgs []tls.SignatureScheme, anchors [][]byte) (*tls.ClientHelloSpec, error) {
+func SpecForQUICWithAnchors(id tls.ClientHelloID, _ int64, sigAlgs []tls.SignatureScheme, anchors [][]byte, shuffleAnchors bool) (*tls.ClientHelloSpec, error) {
 	spec, err := tls.UTLSIdToSpecWithSeed(id, FreshShuffleSeed())
 	if err != nil {
 		return nil, err
 	}
 	ApplySignatureAlgorithms(spec.Extensions, sigAlgs)
-	ApplyTrustAnchorsPermuted(&spec.Extensions, anchors)
+	applyTrustAnchors(&spec.Extensions, anchors, shuffleAnchors)
 	return &spec, nil
 }
 
@@ -246,15 +260,25 @@ func ApplySignatureAlgorithms(exts []tls.TLSExtension, algs []tls.SignatureSchem
 }
 
 // ApplyTrustAnchors puts the trust_anchors extension (0xCA34) into a spec,
-// carrying anchors, and is a no-op when anchors is empty.
+// carrying anchors in the given order, and is a no-op when anchors is empty.
 //
 // It replaces an existing one rather than adding a second, so a spec that
-// already carries the extension (a captured hello, say) takes the preset's
-// list. Otherwise it inserts ahead of the trailing run of extensions that may
-// not move: GREASE brackets the list, padding sizes the record, and RFC 8446
-// 4.2.11 requires pre_shared_key to be last. Landing after those would pin the
-// extension to the final slot, where BoringSSL marks it out_compressible and so
-// takes part in the ordinary permutation like any other.
+// already carries the extension (a captured hello, say) takes the preset's list
+// and keeps the position the capture or its permutation gave it.
+//
+// Otherwise the extension goes in at a random position among the extensions
+// that move. Chrome permutes it with the rest: BoringSSL lists trust_anchors in
+// kExtensions and permutes every index there, and real captures show it moving
+// (155.0.8059.39 over QUIC put it at 9, 12 and 11 of 12 on three connections).
+// It used to be inserted after the permutation, always just ahead of the
+// trailing pinned run, so it sat in the same slot on every connection while
+// everything around it moved. The spec it is added to is already uniformly
+// permuted, so inserting at a uniformly random slot keeps the whole order
+// uniform.
+//
+// The pinned run stays where it is: GREASE brackets the list, padding sizes the
+// record, and RFC 8446 4.2.11 requires pre_shared_key to be last.
+//
 // It takes a pointer to the slice, unlike ApplySignatureAlgorithms, because
 // adding an extension changes the slice header rather than an element. That
 // also lets the H1 path pass &tlsConn.Extensions, where there is no spec.
@@ -262,54 +286,23 @@ func ApplyTrustAnchors(exts *[]tls.TLSExtension, anchors [][]byte) {
 	applyTrustAnchors(exts, anchors, false)
 }
 
-// ApplyTrustAnchorsPermuted is the QUIC counterpart of ApplyTrustAnchors, and
-// it shuffles the anchor list on every connection.
-//
-// The two transports genuinely differ here, which is the part that took a
-// measurement to believe. Against Chrome 153.0.8010.52:
-//
-//	TCP   29 connections over 3 processes -> 1 trust_anchors payload
-//	QUIC   3 connections in ONE process   -> 3 trust_anchors payloads
-//	QUIC   6 connections over 6 processes -> 6 trust_anchors payloads
-//
-// Same 28 identifiers on both, fixed order on TCP, reshuffled per connection on
-// QUIC. That asymmetry is what the original TCP-versus-QUIC capture pair was
-// actually showing; the mistake was generalising it into a shuffle everywhere
-// rather than reading it as a difference between the two stacks.
-func ApplyTrustAnchorsPermuted(exts *[]tls.TLSExtension, anchors [][]byte) {
-	applyTrustAnchors(exts, anchors, true)
+// ApplyQUICTrustAnchors is ApplyTrustAnchors for a QUIC hello, reshuffling the
+// anchor list per connection when the preset's Chrome version did that. See
+// Preset.QUICTrustAnchorShuffle.
+func ApplyQUICTrustAnchors(exts *[]tls.TLSExtension, p *Preset) {
+	if p == nil {
+		return
+	}
+	applyTrustAnchors(exts, p.TrustAnchors, p.QUICTrustAnchorShuffle)
 }
 
-func applyTrustAnchors(exts *[]tls.TLSExtension, anchors [][]byte, permute bool) {
+func applyTrustAnchors(exts *[]tls.TLSExtension, anchors [][]byte, shuffleList bool) {
 	if exts == nil || len(anchors) == 0 {
 		return
 	}
-	// No shuffle. Chrome sends this list in a fixed order and never varies it:
-	// measured against 153.0.8010.52, 29 connections spanning three separate
-	// processes with fresh profiles produced one byte-identical payload, while
-	// the same 29 connections produced 29 different extension orders. The
-	// extension ORDER is permuted per handshake; the anchor list inside it is
-	// not.
-	//
-	// The shuffle came from reading two captures of one build, one over TCP and
-	// one over QUIC, that carried the same identifiers in different orders, and
-	// concluding the order was random. Two samples from two transports are not
-	// evidence of per-connection randomness, and held to one transport the
-	// order does not move at all.
-	//
-	// The list goes out in the order the preset stores it, and the presets store
-	// it sorted, because that is what Chrome sends. Confirmed on a real Windows
-	// Chrome 154 profile: the 28 identifiers arrive in ascending byte order.
-	//
-	// Captures taken from throwaway headless profiles (a fresh --user-data-dir)
-	// gave other, unsorted orders, and a different one again from a Chrome for
-	// Testing build of the same version. Those profiles never live long enough
-	// to receive the root store from the component updater, so they are not
-	// what a real user's browser looks like. Do not re-pin the order from a
-	// headless capture.
 	ext := &tls.TrustAnchorsExtension{
 		TrustAnchors: append([][]byte(nil), anchors...),
-		Shuffle:      permute,
+		Shuffle:      shuffleList,
 	}
 	for i, e := range *exts {
 		if _, ok := e.(*tls.TrustAnchorsExtension); ok {
@@ -318,20 +311,47 @@ func applyTrustAnchors(exts *[]tls.TLSExtension, anchors [][]byte, permute bool)
 		}
 	}
 
-	at := len(*exts)
-	for at > 0 {
-		switch (*exts)[at-1].(type) {
-		case *tls.UtlsGREASEExtension, *tls.UtlsPaddingExtension, tls.PreSharedKeyExtension:
-			at--
-			continue
-		}
-		break
-	}
+	start, end := movableRange(*exts)
+	at := start + randIntn(end-start+1)
 	out := make([]tls.TLSExtension, 0, len(*exts)+1)
 	out = append(out, (*exts)[:at]...)
 	out = append(out, ext)
 	out = append(out, (*exts)[at:]...)
 	*exts = out
+}
+
+// movableRange returns the half-open span of exts that BoringSSL permutes:
+// everything between a leading GREASE extension and the trailing run of GREASE,
+// padding and pre_shared_key.
+func movableRange(exts []tls.TLSExtension) (start, end int) {
+	if len(exts) > 0 {
+		if _, ok := exts[0].(*tls.UtlsGREASEExtension); ok {
+			start = 1
+		}
+	}
+	end = len(exts)
+	for end > start {
+		switch exts[end-1].(type) {
+		case *tls.UtlsGREASEExtension, *tls.UtlsPaddingExtension, tls.PreSharedKeyExtension:
+			end--
+			continue
+		}
+		break
+	}
+	return start, end
+}
+
+// randIntn draws from [0, n) with crypto/rand, matching the source the
+// extension permutation itself uses.
+func randIntn(n int) int {
+	if n <= 1 {
+		return 0
+	}
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return int(time.Now().UnixNano() % int64(n))
+	}
+	return int(binary.LittleEndian.Uint64(b[:]) % uint64(n))
 }
 
 // TCPFingerprint contains TCP/IP stack parameters that identify the OS.

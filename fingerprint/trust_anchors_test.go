@@ -17,7 +17,8 @@ import (
 // Services IDs were dropped and none added: d6790902, d6790903, d6790909 and
 // d679090e.
 //
-// The order below is canonical only; every capture carried a different one.
+// The order below is only a fixture; which order goes out is per version (see
+// trust_anchors_order_test.go).
 var chrome152Anchors = []string{
 	"82df130201", "82df130206", "82df13020d", "82df13020e", "82df13020f",
 	"82df130212", "82df130213", "82df130214",
@@ -72,9 +73,15 @@ func TestApplyTrustAnchorsInsertsBeforeThePinnedTail(t *testing.T) {
 			at = i
 		}
 	}
-	if at != 4 {
-		t.Fatalf("trust_anchors landed at index %d, want 4, ahead of the "+
-			"trailing GREASE and padding", at)
+	// Anywhere in the movable span, never ahead of the leading GREASE and
+	// never inside the pinned tail. The exact slot is random, since Chrome
+	// permutes this extension with the rest.
+	if at < 1 || at > 4 {
+		t.Fatalf("trust_anchors landed at index %d, want 1..4, between the "+
+			"leading GREASE and the trailing GREASE and padding", at)
+	}
+	if _, ok := exts[0].(*tls.UtlsGREASEExtension); !ok {
+		t.Error("the leading GREASE extension moved")
 	}
 	if _, ok := exts[5].(*tls.UtlsGREASEExtension); !ok {
 		t.Error("the trailing GREASE extension moved")

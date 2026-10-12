@@ -3,6 +3,39 @@
   "preset": {
     "name": "chrome-154-android",
     "based_on": "chrome-153-android",
+    "tls": {
+      "trust_anchors": [
+        "82df130201",
+        "82df130206",
+        "82df13020d",
+        "82df13020e",
+        "82df13020f",
+        "82df130212",
+        "82df130213",
+        "82df130214",
+        "839a648c9b2d0107",
+        "839a648c9b2d0108",
+        "839a648c9b2d0109",
+        "839a648c9b2d010a",
+        "839a648c9b2d010b",
+        "839a648c9b2d010c",
+        "839a648c9b2d010d",
+        "839a648c9b2d0112",
+        "839a648c9b2d0113",
+        "d6790901",
+        "d6790904",
+        "d6790905",
+        "d6790906",
+        "d6790907",
+        "d6790908",
+        "d679090a",
+        "d679090b",
+        "d679090c",
+        "d679090d",
+        "d679090f"
+      ],
+      "quic_trust_anchors_shuffle": false
+    },
     "headers": {
       "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36",
       "values": {
