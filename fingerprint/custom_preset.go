@@ -1406,11 +1406,40 @@ func validatePreset(p *Preset, spec *PresetSpec) error {
 		// override, so describing any Chrome 150 or later preset produced JSON
 		// the loader then refused. Its QUIC counterpart was never listed and
 		// has always been allowed.
-		hasExtFields := len(spec.TLS.ALPN) > 0 ||
-			len(spec.TLS.CertCompression) > 0 || spec.TLS.PermuteExtensions != nil ||
-			spec.TLS.RecordSizeLimit != nil
-		if hasExtFields && spec.TLS.JA3 == "" && spec.TLS.ClientHello != "" {
-			return fmt.Errorf("tls extension fields (alpn, cert_compression, permute_extensions, record_size_limit) only apply with ja3, not client_hello")
+		//
+		// The rest are read only when the same tls block declares ja3, and
+		// permute_extensions also on the raw path. Anywhere else they used to
+		// be dropped without a word: the guard here fired only when
+		// client_hello was set explicitly, so a preset inheriting its hello
+		// through based_on, or carrying a raw capture, loaded cleanly and went
+		// on the wire without the values it declared (#130). A preset that
+		// looks configured and is not is the worst kind of fingerprint bug,
+		// because every request still succeeds.
+		if spec.TLS.JA3 == "" {
+			var ignored []string
+			if len(spec.TLS.ALPN) > 0 {
+				ignored = append(ignored, "alpn")
+			}
+			if len(spec.TLS.CertCompression) > 0 {
+				ignored = append(ignored, "cert_compression")
+			}
+			if spec.TLS.RecordSizeLimit != nil {
+				ignored = append(ignored, "record_size_limit")
+			}
+			if spec.TLS.PermuteExtensions != nil && spec.TLS.RawClientHello == "" {
+				ignored = append(ignored, "permute_extensions")
+			}
+			if len(ignored) > 0 {
+				mode := "a client_hello inherited through based_on"
+				switch {
+				case spec.TLS.RawClientHello != "":
+					mode = "raw_client_hello, whose captured bytes already fix them"
+				case spec.TLS.ClientHello != "":
+					mode = "client_hello"
+				}
+				return fmt.Errorf("tls.%s only apply alongside ja3 in the same tls block, "+
+					"and would be ignored with %s", strings.Join(ignored, ", tls."), mode)
+			}
 		}
 	}
 
