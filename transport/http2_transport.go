@@ -314,6 +314,39 @@ func NewHTTP2TransportWithConfig(preset *fingerprint.Preset, dnsCache *dns.Cache
 	return t
 }
 
+// maxHTTP2Retries is how many times a request that failed before its response
+// headers is sent again, so it goes out at most maxHTTP2Retries+1 times. It is
+// Chrome's kMaxRetryAttempts, one budget shared by every retryable reason.
+// Measured against Chrome 155: two refusals and the third send lands, three and
+// the load fails after exactly three HEADERS, all on one connection.
+const maxHTTP2Retries = 2
+
+// isRefusedStream reports a RST_STREAM(REFUSED_STREAM) from the server.
+func isRefusedStream(err error) bool {
+	var se http2.StreamError
+	return errors.As(err, &se) && se.Code == http2.ErrCodeRefusedStream
+}
+
+// retryableHTTP2Request narrows the fork's retry predicate to Chrome's list.
+// The fork also replays a RST_STREAM(PROTOCOL_ERROR) from the peer, inherited
+// from golang/go#47635. Chrome maps that to ERR_HTTP2_PROTOCOL_ERROR, which is
+// not on its retry list, and fails after one send.
+func retryableHTTP2Request(req *http.Request, err error) (*http.Request, error) {
+	var se http2.StreamError
+	if errors.As(err, &se) && se.Code != http2.ErrCodeRefusedStream {
+		return nil, err
+	}
+	return http2.ShouldRetryRequest(req, err)
+}
+
+// connClosing reports whether a connection can no longer open streams. It is
+// not CanTakeNewRequest, which is also false for a healthy connection that is
+// merely at its concurrent stream limit.
+func connClosing(c *persistentConn) bool {
+	st := c.h2Conn.State()
+	return st.Closed || st.Closing
+}
+
 // RoundTrip implements http.RoundTripper
 func (t *HTTP2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	t.connsMu.RLock()
@@ -346,18 +379,28 @@ func (t *HTTP2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	// Make request
 	resp, err := conn.h2Conn.RoundTrip(req)
-	if err != nil {
+	for attempt := 0; err != nil; attempt++ {
 		// release(), not a bare decrement: if this conn was evicted while the
 		// request was in flight its close was deferred, and only release()
 		// fires it once the count reaches zero.
 		conn.release()
 
-		// Connection might be dead, remove it before deciding anything.
-		t.removeConn(key)
+		// A refused stream closes one stream and says nothing about the
+		// connection, so Chrome resends on the session it already has. Every
+		// other failure, and a refusal on a connection that is closing anyway,
+		// means the connection is gone and the next attempt needs a new one.
+		if !isRefusedStream(err) || connClosing(conn) {
+			t.removeConn(key)
+		}
 
 		// Don't retry if context is already done (e.g. timeout expired)
 		if req.Context().Err() != nil {
 			return nil, req.Context().Err()
+		}
+
+		// Chrome's budget: kMaxRetryAttempts in http_network_transaction.cc.
+		if attempt == maxHTTP2Retries {
+			return nil, err
 		}
 
 		// Ask whether this is a failure worth replaying, and get the request
@@ -373,15 +416,16 @@ func (t *HTTP2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		// a comment describing the same failure.
 		//
 		// And the classification: a browser replays a refused stream or a
-		// graceful GOAWAY, and gives up on RST_STREAM(INTERNAL_ERROR) before
-		// headers, and never makes a second HTTP/2 attempt after
-		// HTTP_1_1_REQUIRED. Retrying everything produced two HEADERS arrivals
-		// where a real client produces one, on exactly the errors a server
-		// chooses to send.
-		retryReq, retryErr := http2.ShouldRetryRequest(req, err)
+		// graceful GOAWAY, and gives up on RST_STREAM(INTERNAL_ERROR) or
+		// RST_STREAM(PROTOCOL_ERROR) before headers, and never makes a second
+		// HTTP/2 attempt after HTTP_1_1_REQUIRED. Retrying everything produced
+		// two HEADERS arrivals where a real client produces one, on exactly the
+		// errors a server chooses to send.
+		retryReq, retryErr := retryableHTTP2Request(req, err)
 		if retryErr != nil || retryReq == nil {
 			return nil, err
 		}
+		req = retryReq
 
 		conn, err = t.getOrCreateConn(req.Context(), host, port, key)
 		if err != nil {
@@ -392,12 +436,7 @@ func (t *HTTP2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		conn.inFlight++
 		conn.mu.Unlock()
 
-		resp, err = conn.h2Conn.RoundTrip(retryReq)
-		if err != nil {
-			conn.release()
-			t.removeConn(key)
-			return nil, err
-		}
+		resp, err = conn.h2Conn.RoundTrip(req)
 	}
 
 	// Keep the connection marked in-use until the caller finishes with the body.
