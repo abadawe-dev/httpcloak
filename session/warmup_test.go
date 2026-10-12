@@ -202,7 +202,7 @@ func TestGroupByPriority_Empty(t *testing.T) {
 }
 
 func TestBuildSubresourceHeaders_CSS(t *testing.T) {
-	headers := buildSubresourceHeaders(resourceCSS, "https://example.com/page", "https://example.com/style.css")
+	headers := buildSubresourceHeaders(nil, resourceCSS, "https://example.com/page", "https://example.com/style.css")
 
 	assertHeader(t, headers, "Accept", "text/css,*/*;q=0.1")
 	assertHeader(t, headers, "Sec-Fetch-Mode", "no-cors")
@@ -213,7 +213,7 @@ func TestBuildSubresourceHeaders_CSS(t *testing.T) {
 }
 
 func TestBuildSubresourceHeaders_JS(t *testing.T) {
-	headers := buildSubresourceHeaders(resourceJS, "https://example.com/page", "https://example.com/app.js")
+	headers := buildSubresourceHeaders(nil, resourceJS, "https://example.com/page", "https://example.com/app.js")
 
 	assertHeader(t, headers, "Accept", "*/*")
 	assertHeader(t, headers, "Sec-Fetch-Mode", "no-cors")
@@ -222,7 +222,7 @@ func TestBuildSubresourceHeaders_JS(t *testing.T) {
 }
 
 func TestBuildSubresourceHeaders_Image(t *testing.T) {
-	headers := buildSubresourceHeaders(resourceImage, "https://example.com/page", "https://example.com/logo.png")
+	headers := buildSubresourceHeaders(nil, resourceImage, "https://example.com/page", "https://example.com/logo.png")
 
 	assertHeader(t, headers, "Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
 	assertHeader(t, headers, "Sec-Fetch-Mode", "no-cors")
@@ -231,7 +231,7 @@ func TestBuildSubresourceHeaders_Image(t *testing.T) {
 }
 
 func TestBuildSubresourceHeaders_Font(t *testing.T) {
-	headers := buildSubresourceHeaders(resourceFont, "https://example.com/page", "https://example.com/font.woff2")
+	headers := buildSubresourceHeaders(nil, resourceFont, "https://example.com/page", "https://example.com/font.woff2")
 
 	assertHeader(t, headers, "Accept", "*/*")
 	assertHeader(t, headers, "Sec-Fetch-Mode", "cors")
@@ -240,12 +240,12 @@ func TestBuildSubresourceHeaders_Font(t *testing.T) {
 }
 
 func TestBuildSubresourceHeaders_CrossSite(t *testing.T) {
-	headers := buildSubresourceHeaders(resourceImage, "https://example.com/page", "https://cdn.other.com/img.png")
+	headers := buildSubresourceHeaders(nil, resourceImage, "https://example.com/page", "https://cdn.other.com/img.png")
 	assertHeader(t, headers, "Sec-Fetch-Site", "cross-site")
 }
 
 func TestBuildSubresourceHeaders_SameSite(t *testing.T) {
-	headers := buildSubresourceHeaders(resourceCSS, "https://www.example.com/page", "https://cdn.example.com/style.css")
+	headers := buildSubresourceHeaders(nil, resourceCSS, "https://www.example.com/page", "https://cdn.example.com/style.css")
 	assertHeader(t, headers, "Sec-Fetch-Site", "same-site")
 }
 

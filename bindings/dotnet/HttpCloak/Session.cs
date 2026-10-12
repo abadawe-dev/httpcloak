@@ -3488,6 +3488,20 @@ public static class Presets
     public const string Chrome153MacOS = "chrome-153-macos";
     public const string Chrome153Android = "chrome-153-android";
 
+    // Chrome 154 (headers-only over 153)
+    public const string Chrome154 = "chrome-154";
+    public const string Chrome154Windows = "chrome-154-windows";
+    public const string Chrome154Linux = "chrome-154-linux";
+    public const string Chrome154MacOS = "chrome-154-macos";
+    public const string Chrome154Android = "chrome-154-android";
+
+    // Chrome 155 (adds image/jxl to Accept; TLS unchanged)
+    public const string Chrome155 = "chrome-155";
+    public const string Chrome155Windows = "chrome-155-windows";
+    public const string Chrome155Linux = "chrome-155-linux";
+    public const string Chrome155MacOS = "chrome-155-macos";
+    public const string Chrome155Android = "chrome-155-android";
+
     // Chrome 152 (trust anchors, plus a greased signature algorithm on TCP)
     public const string Chrome152 = "chrome-152";
     public const string Chrome152Windows = "chrome-152-windows";

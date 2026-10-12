@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Chrome 154 and 155 presets**: `chrome-154` and `chrome-155`, each for windows, linux, macos and android, with the `chrome-latest*` aliases moved onto 155. Neither release touched the TLS handshake or the HTTP/2 settings, and both brand lists match the derivation the test suite replays.
+
+  154 is headers-only like 153. 155 moves a third header: Chrome added `image/jxl` to its Accept header, both on page loads and on image loads, so a 155 preset that only bumped the version numbers would have sent a 155 User-Agent with a 154 Accept. Measured across every request type a page makes; scripts, styles, fonts and `fetch()` kept their Accept. Presets gain an optional `headers.image_accept` field for the image value, which is inherited through `based_on` and defaults to the earlier value.
+
+  The page-load and image Accept values are now read from the preset on every path that builds a request. The navigation and image helpers, the client's navigation headers and session warmup each carried their own hardcoded copy, which happened to match Chrome until 155. Firefox and Safari presets also send their own page-load Accept on those paths now, where they used to send Chrome's.
+
 - **Chrome 153 presets**: `chrome-153`, `chrome-153-windows`, `chrome-153-linux`, `chrome-153-macos` and `chrome-153-android`, with the `chrome-latest*` aliases moved onto them. A headers-only release, so the ClientHello is inherited from 152 and the JA3 and JA4 values are unchanged; only the User-Agent and `sec-ch-ua` move. The brand list is not a naive version bump: Chrome reseeds the greased brand and reorders the three entries off the major version, so 153 sends `"Google Chrome";v="153", "Not_A Brand";v="8", "Chromium";v="153"` rather than 152's shape with the numbers swapped. That derivation is now replayed in the test suite against every Chrome version the library ships, so the next bump either matches it or fails loudly.
 
   The Python, Node and .NET preset constants gain both 152 and 153; they had stopped at 151, so `chrome-152` was reachable only as a raw string in those bindings.

@@ -2124,11 +2124,10 @@ func applyNavigationModeHeaders(httpReq *http.Request, preset *fingerprint.Prese
 	}
 
 	// Content negotiation — use preset values, fall back to Chrome defaults
-	if v, ok := preset.Headers["Accept"]; ok {
-		httpReq.Header.Set("Accept", v)
-	} else {
-		httpReq.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
-	}
+	// preset.Headers only ever holds the values block (sec-ch-ua), so the old
+	// lookup here never found an Accept and always fell back to a hardcoded
+	// one. The navigation Accept lives in the header order.
+	httpReq.Header.Set("Accept", preset.ResolveNavigationAccept())
 	if v, ok := preset.Headers["Accept-Encoding"]; ok {
 		httpReq.Header.Set("Accept-Encoding", v)
 	} else {
@@ -2228,7 +2227,7 @@ func applyNoCorsHeaders(httpReq *http.Request, preset *fingerprint.Preset, req *
 	case "style":
 		httpReq.Header.Set("Accept", "text/css,*/*;q=0.1")
 	case "image":
-		httpReq.Header.Set("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+		httpReq.Header.Set("Accept", preset.ResolveImageAccept())
 	default: // "script", "empty", etc.
 		httpReq.Header.Set("Accept", "*/*")
 	}

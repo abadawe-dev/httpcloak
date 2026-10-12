@@ -245,6 +245,10 @@ func groupByPriority(resources []subresource) (cssAndFonts, scripts, images []su
 // fetchBatch fetches a batch of subresources concurrently (up to concurrencyLimit).
 // Errors are silently ignored (matches browser behavior).
 func fetchBatch(ctx context.Context, s *Session, batch []subresource, pageURL string) {
+	var preset *fingerprint.Preset
+	if s.Config != nil && s.Config.Preset != "" {
+		preset = fingerprint.Get(s.Config.Preset)
+	}
 	sem := make(chan struct{}, concurrencyLimit)
 	var wg sync.WaitGroup
 
@@ -264,7 +268,7 @@ func fetchBatch(ctx context.Context, s *Session, batch []subresource, pageURL st
 				return
 			}
 
-			headers := buildSubresourceHeaders(r.typ, pageURL, r.url)
+			headers := buildSubresourceHeaders(preset, r.typ, pageURL, r.url)
 			req := &transport.Request{
 				Method:  "GET",
 				URL:     r.url,
@@ -297,7 +301,7 @@ func fetchBatch(ctx context.Context, s *Session, batch []subresource, pageURL st
 
 // buildSubresourceHeaders returns the headers for a subresource request,
 // overriding the preset's navigation defaults with per-type values.
-func buildSubresourceHeaders(typ resourceType, pageURL, targetURL string) map[string][]string {
+func buildSubresourceHeaders(preset *fingerprint.Preset, typ resourceType, pageURL, targetURL string) map[string][]string {
 	var reqCtx fingerprint.RequestContext
 	var accept, priority string
 
@@ -312,7 +316,7 @@ func buildSubresourceHeaders(typ resourceType, pageURL, targetURL string) map[st
 		priority = "u=1"
 	case resourceImage:
 		reqCtx = fingerprint.ImageContext(pageURL, targetURL)
-		accept = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+		accept = preset.ResolveImageAccept()
 		priority = "u=2"
 	case resourceFont:
 		reqCtx = fingerprint.FontContext(pageURL, targetURL)

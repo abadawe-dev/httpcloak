@@ -424,6 +424,51 @@ type HeaderCoherence struct {
 	platform PlatformInfo
 }
 
+// The Accept values Chrome sent up to and including 154. They are the fallback
+// for a preset that does not carry its own, which keeps every older preset
+// emitting exactly what it emitted before.
+const (
+	legacyNavigationAccept = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+	legacyImageAccept      = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+)
+
+// ResolveNavigationAccept returns the Accept header for a document load: the
+// one in the preset's header order, which is what the transport puts on the
+// wire, or the legacy value if the preset has none.
+//
+// Every navigation path used to hardcode the value instead. That was invisible
+// while Chrome's Accept stayed put, and wrong the moment it moved: Chrome 155
+// added image/jxl, so a 155 preset would have sent its own Accept from the
+// transport and the 154 one from the helpers, depending on which path built the
+// request.
+func (p *Preset) ResolveNavigationAccept() string {
+	if p != nil {
+		for _, hp := range p.HeaderOrder {
+			if strings.EqualFold(hp.Key, "accept") && hp.Value != "" {
+				return hp.Value
+			}
+		}
+		for k, v := range p.Headers {
+			if strings.EqualFold(k, "accept") && v != "" {
+				return v
+			}
+		}
+	}
+	return legacyNavigationAccept
+}
+
+// ResolveImageAccept returns the Accept header for an image load.
+//
+// Measured on Chrome 155.0.8059.39 against 154.0.8037.92: image requests gained
+// image/jxl at the front, matching the navigation Accept. Scripts, styles,
+// fonts and fetch() did not change.
+func (p *Preset) ResolveImageAccept() string {
+	if p != nil && p.ImageAccept != "" {
+		return p.ImageAccept
+	}
+	return legacyImageAccept
+}
+
 // NewHeaderCoherence creates a new HeaderCoherence helper
 func NewHeaderCoherence(preset *Preset) *HeaderCoherence {
 	return &HeaderCoherence{
@@ -450,7 +495,7 @@ func (h *HeaderCoherence) ApplyToHeaders(headers map[string]string, ctx RequestC
 	case FetchModeNavigate:
 		headers["Upgrade-Insecure-Requests"] = "1"
 		// Note: Cache-Control is NOT sent on normal navigation, only on hard refresh (Ctrl+F5)
-		headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+		headers["Accept"] = h.preset.ResolveNavigationAccept()
 	case FetchModeCORS, FetchModeSameOrigin:
 		headers["Accept"] = "*/*"
 		delete(headers, "Upgrade-Insecure-Requests")
@@ -459,7 +504,7 @@ func (h *HeaderCoherence) ApplyToHeaders(headers map[string]string, ctx RequestC
 		// Set Accept based on destination
 		switch ctx.Dest {
 		case FetchDestImage:
-			headers["Accept"] = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+			headers["Accept"] = h.preset.ResolveImageAccept()
 		case FetchDestStyle:
 			headers["Accept"] = "text/css,*/*;q=0.1"
 		case FetchDestScript:

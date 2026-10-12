@@ -46,6 +46,18 @@ const Preset = {
   CHROME_153_LINUX: "chrome-153-linux",
   CHROME_153_MACOS: "chrome-153-macos",
   CHROME_153_ANDROID: "chrome-153-android",
+  // Chrome 154 (headers-only over 153)
+  CHROME_154: "chrome-154",
+  CHROME_154_WINDOWS: "chrome-154-windows",
+  CHROME_154_LINUX: "chrome-154-linux",
+  CHROME_154_MACOS: "chrome-154-macos",
+  CHROME_154_ANDROID: "chrome-154-android",
+  // Chrome 155 (adds image/jxl to Accept; TLS unchanged)
+  CHROME_155: "chrome-155",
+  CHROME_155_WINDOWS: "chrome-155-windows",
+  CHROME_155_LINUX: "chrome-155-linux",
+  CHROME_155_MACOS: "chrome-155-macos",
+  CHROME_155_ANDROID: "chrome-155-android",
 
   // Chrome 152 (trust anchors, plus a greased signature algorithm on TCP)
   CHROME_152: "chrome-152",

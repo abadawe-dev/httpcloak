@@ -233,6 +233,11 @@ type HeaderSpec struct {
 	UserAgent string            `json:"user_agent,omitempty"`
 	Values    map[string]string `json:"values,omitempty"`
 	Order     []HeaderPairSpec  `json:"order,omitempty"`
+
+	// ImageAccept is the Accept header for image loads. Navigation carries its
+	// Accept in Order, but image requests are built elsewhere and need their
+	// own value, which moves between Chrome versions (155 added image/jxl).
+	ImageAccept string `json:"image_accept,omitempty"`
 }
 
 // HeaderPairSpec is a key-value pair for ordered headers in JSON.
@@ -1219,6 +1224,9 @@ func applyHTTP3(p *Preset, spec *HTTP3Spec) {
 func applyHeaders(p *Preset, spec *HeaderSpec) {
 	if spec.UserAgent != "" {
 		p.UserAgent = spec.UserAgent
+	}
+	if spec.ImageAccept != "" {
+		p.ImageAccept = spec.ImageAccept
 	}
 
 	// Merge values into Headers map

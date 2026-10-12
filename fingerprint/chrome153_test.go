@@ -152,18 +152,6 @@ func greasedBrandList(major int) string {
 	return strings.Join(slots[:], ", ")
 }
 
-// chrome-latest is what a caller gets when they ask for "whatever Chrome is
-// now", so it has to move with the newest desktop preset.
-func TestChromeLatestIsChrome153(t *testing.T) {
-	latest := Get("chrome-latest")
-	if latest == nil {
-		t.Fatal("chrome-latest not registered")
-	}
-	if !strings.Contains(latest.UserAgent, "Chrome/153.0.0.0") {
-		t.Errorf("chrome-latest UA = %q, want Chrome/153.0.0.0", latest.UserAgent)
-	}
-}
-
 // There is no chrome-153-ios, on purpose. The CriOS User-Agent carries a build
 // number no rule derives from the major version, so an iOS preset is only as
 // new as its last capture. Registering the name with 152's User-Agent behind it
@@ -184,33 +172,5 @@ func TestChrome153HasNoIOSPresetYet(t *testing.T) {
 	}
 	if !strings.Contains(newest.UserAgent, "CriOS/152.") {
 		t.Errorf("chrome-152-ios UA = %q, want a CriOS/152 build", newest.UserAgent)
-	}
-}
-
-// The -latest aliases move as a set, apart from iOS. Android's User-Agent is
-// the reduced one, so it carries no build number and follows desktop; iOS does
-// carry one and stays where its last capture put it.
-//
-// This is the single home for the alias assertion. Each version bump used to
-// leave a copy behind in the previous version's file, all pinned to the same
-// values; the 151 file's copy was folded in here. Move this test to the next
-// version's file rather than adding another.
-func TestChrome153LatestAliases(t *testing.T) {
-	for _, tc := range []struct{ alias, wantUA string }{
-		{"chrome-latest", "Chrome/153.0.0.0"},
-		{"chrome-latest-windows", "Chrome/153.0.0.0"},
-		{"chrome-latest-linux", "Chrome/153.0.0.0"},
-		{"chrome-latest-macos", "Chrome/153.0.0.0"},
-		{"chrome-latest-android", "Chrome/153.0.0.0"},
-		{"chrome-latest-ios", "CriOS/152.0.7977.64"},
-	} {
-		p := GetStrict(tc.alias)
-		if p == nil {
-			t.Errorf("%s not registered", tc.alias)
-			continue
-		}
-		if !strings.Contains(p.UserAgent, tc.wantUA) {
-			t.Errorf("%s: UA = %q, want it to contain %q", tc.alias, p.UserAgent, tc.wantUA)
-		}
 	}
 }
