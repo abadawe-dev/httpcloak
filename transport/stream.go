@@ -676,7 +676,12 @@ func setupStreamDecompressor(body io.ReadCloser, encoding string) (io.ReadCloser
 		if err != nil {
 			return body, nil
 		}
-		return &zstdStreamReader{decoder: decoder, body: body}, nil
+		// The decoder must be returned as the closer too. It runs goroutines
+		// until it is closed, and StreamResponse.Close closes only what comes
+		// back here, so with a nil closer a stream closed before its end left
+		// them running for good (#118). IOReadCloser's Close releases the
+		// decoder alone; the body is closed separately, as rawReader.
+		return &zstdStreamReader{decoder: decoder, body: body}, decoder.IOReadCloser()
 	default:
 		return body, nil
 	}

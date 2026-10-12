@@ -305,7 +305,11 @@ func setupDecompressor(body io.ReadCloser, encoding string) (io.ReadCloser, io.C
 		if err != nil {
 			return body, nil
 		}
-		return &zstdReadCloser{decoder}, nil
+		// Returned as the closer as well, so StreamResponse.Close releases the
+		// decoder's goroutines when a stream is closed early (#118). Its Close
+		// closes the decoder only; the body is closed separately.
+		reader := &zstdReadCloser{decoder}
+		return reader, reader
 	case "deflate":
 		// This case was missing, so a streamed deflate response came back
 		// still compressed even though Accept-Encoding offers deflate.
