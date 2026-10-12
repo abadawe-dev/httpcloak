@@ -9,6 +9,9 @@
 package h2build
 
 import (
+	"strconv"
+	"strings"
+
 	http "github.com/sardanioss/http"
 	"github.com/sardanioss/httpcloak/fingerprint"
 	"github.com/sardanioss/net/http2"
@@ -109,16 +112,28 @@ func Transport(o Options) *http2.Transport {
 			}
 		}(),
 
-		// Per-request priority. Chrome 147+ desktop emits a different stream
-		// weight per resource type rather than one session-wide value, so when
-		// the preset carries a table we consult the request's Sec-Fetch-Dest.
-		// nil for an unknown dest falls back to HeaderPriority above.
+		// Per-request priority. Chrome derives a stream's weight and its
+		// priority header from one request priority (spdy_session.cc and
+		// spdy_http_utils.cc both start from HIGHEST - priority), so a request
+		// that carries its own priority header gets the weight that goes with
+		// it. The dest is only a stand-in for when it does not: a favicon is
+		// dest image like an <img>, but goes at u=1 where the <img> goes at u=2.
+		// nil, for an unknown dest and no header, falls back to HeaderPriority.
+		//
+		// Both names are looked up without regard to case, because exact
+		// headers keep them lowercase and Header.Get would miss them.
 		HeaderPriorityFunc: func() func(*http.Request) *http2.PriorityParam {
 			if !p.H2HasPriorityTable() {
 				return nil
 			}
 			return func(req *http.Request) *http2.PriorityParam {
-				weight, exclusive, _, ok := p.H2PriorityFor(req.Header.Get("Sec-Fetch-Dest"))
+				weight, exclusive, _, ok := p.H2PriorityFor(headerValue(req.Header, "Sec-Fetch-Dest"))
+				if v := headerValue(req.Header, "Priority"); v != "" {
+					if !ok {
+						exclusive = s.StreamExclusive
+					}
+					weight, ok = fingerprint.PriorityFromUrgency(urgencyOf(v)), true
+				}
 				if !ok {
 					return nil
 				}
@@ -258,4 +273,36 @@ func boolToUint32(b bool) uint32 {
 		return 1
 	}
 	return 0
+}
+
+// headerValue is the first value of a header, whatever case its name was
+// stored in.
+func headerValue(h http.Header, name string) string {
+	if v := h.Get(name); v != "" {
+		return v
+	}
+	for k, vs := range h {
+		if len(vs) > 0 && strings.EqualFold(k, name) {
+			return vs[0]
+		}
+	}
+	return ""
+}
+
+// urgencyOf reads the urgency from an RFC 9218 priority field value. A
+// repeated key takes its last value, as in any structured field dictionary,
+// and a value with no u=, or one that is not an integer from 0 to 7, has the
+// default urgency, 3, as section 4.1 says.
+func urgencyOf(v string) uint8 {
+	last := ""
+	for _, member := range strings.Split(v, ",") {
+		member, _, _ = strings.Cut(member, ";") // drop parameters
+		if key, val, _ := strings.Cut(strings.TrimSpace(member), "="); key == "u" {
+			last = strings.TrimSpace(val)
+		}
+	}
+	if u, err := strconv.Atoi(last); err == nil && u >= 0 && u <= 7 {
+		return uint8(u)
+	}
+	return 3
 }

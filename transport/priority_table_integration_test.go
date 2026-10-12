@@ -393,28 +393,34 @@ func TestPriorityTable_WireEmission_NoRFC7540PresetSingleWeight(t *testing.T) {
 	}
 }
 
-// TestPriorityTable_WireEmission_UnknownDestFallsBack verifies that when a
-// chrome-147 preset receives a Sec-Fetch-Dest it doesn't know about, the
-// transport falls back to the static StreamWeight. This means the dest
-// table is purely additive: weird dests never break things.
+// TestPriorityTable_WireEmission_UnknownDestFallsBack verifies that a dest the
+// table does not know never breaks a request, and that the weight it gets
+// still agrees with the priority header it carries. The header pipeline gives
+// such a request the CORS priority, u=1, i, so the weight is 220. This test
+// used to require the static 256 here, which put u=1 in the header and u=0's
+// weight in the frame, a pair no Chrome build sends (#129). The fallback to
+// the static weight, for an unknown dest with no header at all, is covered in
+// TestStreamWeightFollowsTheRequestsPriorityHeader.
 func TestPriorityTable_WireEmission_UnknownDestFallsBack(t *testing.T) {
 	preset := fingerprint.Get("chrome-147-windows")
 	if preset == nil {
 		t.Skip("chrome-147-windows preset unavailable")
 	}
 
-	staticWeight := uint8(preset.HTTP2Settings.StreamWeight - 1)
 	staticExcl := preset.HTTP2Settings.StreamExclusive
 
 	srv := startH2CaptureServer(t)
 	c := fireGet(t, srv, preset, "made-up-dest-xyz")
 
 	if !c.HasPriority {
-		t.Fatalf("HasPriority=false (should fall back to static, not omit)")
+		t.Fatalf("HasPriority=false (should fall back, not omit)")
 	}
-	if c.Priority.Weight != staticWeight {
-		t.Errorf("unknown dest: wire weight = %d, want %d (fall back to static)",
-			c.Priority.Weight, staticWeight)
+	if c.Headers["priority"] != "u=1, i" {
+		t.Fatalf("unknown dest: priority header = %q, want the CORS u=1, i", c.Headers["priority"])
+	}
+	if got := int(c.Priority.Weight) + 1; got != 220 {
+		t.Errorf("unknown dest (priority %q): weight = %d, want 220 to match the header",
+			c.Headers["priority"], got)
 	}
 	if c.Priority.Exclusive != staticExcl {
 		t.Errorf("unknown dest: exclusive = %v, want %v (fall back)",
