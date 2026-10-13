@@ -1,10 +1,14 @@
 package transport
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
 	"strings"
+	"sync/atomic"
+
+	"github.com/sardanioss/http/httptrace"
 
 	utls "github.com/sardanioss/utls"
 )
@@ -216,6 +220,34 @@ func markNotSent(err error) error {
 		return nil
 	}
 	return &requestNotSentError{err: err}
+}
+
+// withH3SendTrace returns ctx with a trace that records whether the HTTP/3
+// layer handed the request to a connection. It does that only once a dial has
+// returned one, so a request that failed without it, on a failed dial or a
+// deadline that ran out while dialing, sent nothing and may go out over HTTP/2.
+// The HTTP/2 side learns the same from its pool directly.
+func withH3SendTrace(ctx context.Context) (context.Context, *atomic.Bool) {
+	gotConn := new(atomic.Bool)
+	return httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		GotConn: func(httptrace.GotConnInfo) { gotConn.Store(true) },
+	}), gotConn
+}
+
+// h3NotSent marks err as not sent when the HTTP/3 attempt never had a
+// connection to send it on.
+func h3NotSent(err error, gotConn *atomic.Bool) error {
+	if gotConn.Load() {
+		return err
+	}
+	return markNotSent(err)
+}
+
+// errHTTP3Disabled answers a request routed to HTTP/3 after HTTP/3 was turned
+// off, which a request already past the routing decision can still be. Nothing
+// was sent, so auto mode may send it again on HTTP/2.
+func errHTTP3Disabled(host, port string) error {
+	return markNotSent(NewProtocolError(host, port, "h3", errors.New("HTTP/3 is disabled on this transport")))
 }
 
 // requestNotSent reports whether err says the request never reached the

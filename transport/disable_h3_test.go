@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"net"
+	stdhttp "net/http"
+	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -88,4 +90,35 @@ func TestDisableHTTP3SendsNoQUIC(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A host already learned as HTTP/3 kept being routed there after HTTP/3 was
+// turned off, to a transport the snapshot no longer hands out, and both Do and
+// DoStream panicked on it. Turning HTTP/3 off now forgets such hosts, and a
+// request that still reaches HTTP/3 fails as unsent instead.
+func TestDisablingHTTP3ForgetsHostsLearnedAsHTTP3(t *testing.T) {
+	srv := httptest.NewUnstartedServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		w.Write([]byte("ok"))
+	}))
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+
+	tr := autoTransport(t, "chrome-155")
+	tr.cacheProtocol(extractHost(srv.URL), ProtocolHTTP3)
+	tr.SetDisableHTTP3(true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if _, err := tr.Do(ctx, &Request{Method: "GET", URL: srv.URL}); err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	// A request already in flight when HTTP/3 was turned off can still learn
+	// the host as HTTP/3 afterwards; that must not panic either.
+	tr.cacheProtocol(extractHost(srv.URL), ProtocolHTTP3)
+	sr, err := tr.DoStream(ctx, &Request{Method: "GET", URL: srv.URL})
+	if err != nil {
+		t.Fatalf("DoStream: %v", err)
+	}
+	sr.Close()
 }

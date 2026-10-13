@@ -114,3 +114,37 @@ func TestAutoFallsBackForAPostThatWasNeverSent(t *testing.T) {
 		t.Errorf("server saw %d connection attempts, want 2 (H2 dial, then the HTTP/1.1 fallback)", got)
 	}
 }
+
+// A host cached as HTTP/3 whose QUIC dial now fails never had the request on
+// HTTP/3, so a POST still goes out over HTTP/2, once. Before, any HTTP/3
+// failure counted as possibly sent, and the host stayed cached as HTTP/3, so
+// every later POST stream to it failed.
+func TestAutoStreamPostFallsBackWhenHTTP3NeverConnected(t *testing.T) {
+	tr := autoTransport(t, "chrome-155")
+	var mu sync.Mutex
+	var seen []string
+	srv := httptest.NewUnstartedServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		seen = append(seen, r.Proto+" "+r.Method+" "+string(b))
+		mu.Unlock()
+		w.Write([]byte("ok"))
+	}))
+	srv.EnableHTTP2 = true
+	srv.StartTLS() // TCP only: nothing answers QUIC on this port
+	t.Cleanup(srv.Close)
+	tr.cacheProtocol(extractHost(srv.URL), ProtocolHTTP3)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	resp, err := tr.DoStream(ctx, &Request{Method: "POST", URL: srv.URL + "/pay", Body: []byte("charge=100"), Timeout: 3 * time.Second})
+	if err != nil {
+		t.Fatalf("POST should have gone out over HTTP/2 after HTTP/3 never connected: %v", err)
+	}
+	resp.Close()
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != 1 || seen[0] != "HTTP/2.0 POST charge=100" {
+		t.Fatalf("server saw %q, want the POST once, over HTTP/2", seen)
+	}
+}

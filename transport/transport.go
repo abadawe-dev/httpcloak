@@ -901,6 +901,19 @@ func (t *Transport) SetDisableHTTP3(disable bool) {
 	t.fieldsMu.Lock()
 	t.disableH3 = disable
 	t.fieldsMu.Unlock()
+	if !disable {
+		return
+	}
+	// Hosts already learned as HTTP/3 would otherwise keep going to a
+	// transport the snapshot no longer hands out. Forget them, so the next
+	// request picks a protocol again without HTTP/3.
+	t.protocolSupportMu.Lock()
+	for host, p := range t.protocolSupport {
+		if p == ProtocolHTTP3 {
+			delete(t.protocolSupport, host)
+		}
+	}
+	t.protocolSupportMu.Unlock()
 }
 
 // SetInsecureSkipVerify sets whether to skip TLS certificate verification
@@ -2332,6 +2345,9 @@ func (t *Transport) doHTTP3(ctx context.Context, req *Request) (*Response, error
 	if port == "" {
 		port = "443"
 	}
+	if snap.h3 == nil {
+		return nil, errHTTP3Disabled(host, port)
+	}
 
 	// Get dial count BEFORE the request
 	dialCountBefore := snap.h3.GetDialCount()
@@ -2343,6 +2359,7 @@ func (t *Transport) doHTTP3(ctx context.Context, req *Request) (*Response, error
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	ctx, gotConn := withH3SendTrace(ctx)
 
 	// Build HTTP request
 	method := req.Method
@@ -2387,7 +2404,7 @@ func (t *Transport) doHTTP3(ctx context.Context, req *Request) (*Response, error
 	resp, cleanup, err := t.roundTripHTTP3(ctx, snap.h3, httpReq, req)
 	if err != nil {
 		cleanup()
-		return nil, WrapError("roundtrip", host, port, "h3", err)
+		return nil, WrapError("roundtrip", host, port, "h3", h3NotSent(err, gotConn))
 	}
 	// cleanup releases the first-attempt context (if one was armed) only after the
 	// body has been read below, so lazy body streaming is not cancelled early.
