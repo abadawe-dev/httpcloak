@@ -5129,9 +5129,9 @@ class SessionCacheBackend:
         # without unbounded growth.
         from collections import deque
 
-        self._get_buf_lock = Lock()
+        self._get_buf_lock = threading.Lock()
         self._get_buf_ring = deque(maxlen=128)
-        self._ech_get_buf_lock = Lock()
+        self._ech_get_buf_lock = threading.Lock()
         self._ech_get_buf_ring = deque(maxlen=128)
 
     def _make_get_callback(self):

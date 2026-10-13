@@ -63,6 +63,7 @@ internal_tests/
 # file at a time, like the root-level Go tests above, so this stays a
 # deliberate list rather than an open door.
 !/tests/python/test_json_alias.py
+!/tests/python/test_session_cache_backend.py
 
 # Local workspace config (points at machine-local fork paths)
 go.work
