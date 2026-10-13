@@ -117,6 +117,7 @@ const sidebars: SidebarsConfig = {
         'bindings/python',
         'bindings/nodejs',
         'bindings/dotnet',
+        'bindings/android',
       ],
     },
     {

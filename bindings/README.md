@@ -6,6 +6,8 @@ Native language bindings for HTTPCloak, providing direct FFI access to the Go li
 
 - **Python** - Sync + async support with ctypes
 - **Node.js** - Promises + callbacks with koffi
+- **.NET** - P/Invoke, sync + `Task` async
+- **Android (Kotlin)** - Coroutines over a thin JNI bridge, see [android/README.md](android/README.md)
 
 ## Supported Platforms
 
@@ -14,6 +16,7 @@ Native language bindings for HTTPCloak, providing direct FFI access to the Go li
 | Linux    | Yes         | Yes   |
 | macOS    | Yes         | Yes   |
 | Windows  | Yes         | Yes   |
+| Android  | Yes (x86_64, x86) | Yes (arm64-v8a, armeabi-v7a) |
 
 ## Quick Start
 
@@ -81,6 +84,10 @@ bindings/
   nodejs/         # Node.js bindings
     lib/
       index.js    # Main module
+  dotnet/         # .NET bindings
+  android/        # Android library (Gradle project)
+    httpcloak/src/main/cpp/     # JNI bridge
+    httpcloak/src/main/kotlin/  # Kotlin API
   Makefile        # Build orchestration
 ```
 

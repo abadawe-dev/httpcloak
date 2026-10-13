@@ -5,6 +5,7 @@
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include "callback_pool.h"
 
 // ---------------------------------------------------------------------------
@@ -195,11 +196,21 @@ static void hc_dispatch(hc_job* j) {
 int hc_on_worker_thread(void) { return hc_on_worker; }
 
 static void run_callback(hc_job* j) { ((async_callback)j->fn)(j->id, j->a, j->b); }
-static void run_cache_get(hc_job* j) { j->ret_str = ((session_cache_get_callback)j->fn)(j->a); }
+// A getter's result stays owned by the callback, which may reuse or free it on
+// its next call: Python hands back a slot in a small ring, .NET a buffer it
+// frees on the following lookup, Android a thread-local. Go only reads it
+// after the cgo call returns, by which time another lookup may have run, so
+// the result is copied here, on the worker, before it can take another job.
+// The copy is Go's to free.
+static char* copy_cache_result(const char* result) {
+    return result != NULL ? strdup(result) : NULL;
+}
+
+static void run_cache_get(hc_job* j) { j->ret_str = copy_cache_result(((session_cache_get_callback)j->fn)(j->a)); }
 static void run_cache_put(hc_job* j) { j->ret_int = ((session_cache_put_callback)j->fn)(j->a, j->b, j->n); }
 static void run_cache_error(hc_job* j) { ((session_cache_error_callback)j->fn)(j->a, j->b, j->c); }
 static void run_cache_delete(hc_job* j) { j->ret_int = ((session_cache_delete_callback)j->fn)(j->a); }
-static void run_ech_get(hc_job* j) { j->ret_str = ((ech_cache_get_callback)j->fn)(j->a); }
+static void run_ech_get(hc_job* j) { j->ret_str = copy_cache_result(((ech_cache_get_callback)j->fn)(j->a)); }
 static void run_ech_put(hc_job* j) { j->ret_int = ((ech_cache_put_callback)j->fn)(j->a, j->b, j->n); }
 static void run_async_cache_get(hc_job* j) { ((async_cache_get_callback)j->fn)(j->id, j->a); }
 static void run_async_cache_put(hc_job* j) { ((async_cache_put_callback)j->fn)(j->id, j->a, j->b, j->n); }

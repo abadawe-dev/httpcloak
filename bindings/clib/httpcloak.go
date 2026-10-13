@@ -879,7 +879,7 @@ func httpcloak_get_raw(handle C.int64_t, url *C.char, optionsJSON *C.char) (hcRe
 	if options.Timeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(options.Timeout)*time.Millisecond)
 	} else {
-		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, sessionDefaultTimeout(session))
 	}
 	defer cancel()
 
@@ -955,7 +955,7 @@ func httpcloak_post_raw(handle C.int64_t, url *C.char, body *C.char, bodyLen C.i
 	if options.Timeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(options.Timeout)*time.Millisecond)
 	} else {
-		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, sessionDefaultTimeout(session))
 	}
 	defer cancel()
 
@@ -1027,7 +1027,7 @@ func httpcloak_request_raw(handle C.int64_t, requestJSON *C.char, body *C.char, 
 	if config.Timeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(config.Timeout)*time.Millisecond)
 	} else {
-		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, sessionDefaultTimeout(session))
 	}
 	defer cancel()
 
@@ -1424,6 +1424,17 @@ func getSession(handle C.int64_t) *httpcloak.Session {
 	return sessions[int64(handle)]
 }
 
+// sessionDefaultTimeout bounds a synchronous request that carries no timeout
+// of its own. It is the session's configured timeout, so a session created or
+// restored with a longer one is not cut short at 30s, and 30s only for a
+// session that has none.
+func sessionDefaultTimeout(session *httpcloak.Session) time.Duration {
+	if t := session.GetTransport(); t != nil && t.Timeout() > 0 {
+		return t.Timeout()
+	}
+	return 30 * time.Second
+}
+
 //export httpcloak_session_fork
 func httpcloak_session_fork(handle C.int64_t) (hcRet C.int64_t) {
 	defer guardInt64("httpcloak_session_fork", &hcRet)
@@ -1517,7 +1528,7 @@ func httpcloak_get(handle C.int64_t, url *C.char, optionsJSON *C.char) (hcRet *C
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(options.Timeout)*time.Millisecond)
 	} else {
 		// Default 30s timeout to prevent indefinite hangs (especially for MASQUE)
-		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, sessionDefaultTimeout(session))
 	}
 	defer cancel()
 
@@ -1570,7 +1581,7 @@ func httpcloak_post(handle C.int64_t, url *C.char, body *C.char, optionsJSON *C.
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(options.Timeout)*time.Millisecond)
 	} else {
 		// Default 30s timeout to prevent indefinite hangs (especially for MASQUE)
-		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, sessionDefaultTimeout(session))
 	}
 	defer cancel()
 
@@ -1634,7 +1645,7 @@ func httpcloak_request(handle C.int64_t, requestJSON *C.char) (hcRet *C.char) {
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(config.Timeout)*time.Second)
 	} else {
 		// Default 30s timeout to prevent indefinite hangs (especially for MASQUE)
-		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, sessionDefaultTimeout(session))
 	}
 	defer cancel()
 
@@ -1704,7 +1715,9 @@ func httpcloak_cancel_request(callbackID C.int64_t) {
 	}
 }
 
-func invokeCallback(callbackID int64, responseJSON string, errStr string) {
+// invokeCallback reports whether the result reached a registered callback. It
+// does not when the caller unregistered the ID first, typically on cancel.
+func invokeCallback(callbackID int64, responseJSON string, errStr string) bool {
 	callbackMu.Lock()
 	callback, exists := asyncCallbacks[callbackID]
 	// Auto-cleanup: remove callback and cancel func after retrieval to prevent memory leaks
@@ -1715,7 +1728,7 @@ func invokeCallback(callbackID int64, responseJSON string, errStr string) {
 	callbackMu.Unlock()
 
 	if !exists {
-		return
+		return false
 	}
 
 	var respC *C.char
@@ -1736,6 +1749,7 @@ func invokeCallback(callbackID int64, responseJSON string, errStr string) {
 	if errC != nil {
 		C.free(unsafe.Pointer(errC))
 	}
+	return true
 }
 
 //export httpcloak_get_async
@@ -2725,10 +2739,9 @@ func (c *CSessionCacheBackend) Get(ctx context.Context, key string) (*transport.
 	if resultC == nil {
 		return nil, nil // Not found
 	}
-	// Note: Don't free resultC - it's managed by the callback caller (Python/Node)
-	// We only copy the string data with C.GoString
-
+	// resultC is invoke_cache_get's own copy; the callback's buffer is untouched.
 	resultJSON := C.GoString(resultC)
+	C.free(unsafe.Pointer(resultC))
 	if resultJSON == "" {
 		return nil, nil
 	}
@@ -2797,9 +2810,9 @@ func (c *CSessionCacheBackend) GetECHConfig(ctx context.Context, key string) ([]
 	if resultC == nil {
 		return nil, nil // Not found
 	}
-	// Note: Don't free resultC - it's managed by the callback caller (Python/Node)
-
+	// resultC is invoke_ech_get's own copy; the callback's buffer is untouched.
 	resultBase64 := C.GoString(resultC)
+	C.free(unsafe.Pointer(resultC))
 	if resultBase64 == "" {
 		return nil, nil
 	}
@@ -3700,6 +3713,7 @@ func httpcloak_stream_request(sessionHandle C.int64_t, requestJSON *C.char) (hcR
 	if requestJSON != nil {
 		jsonStr := C.GoString(requestJSON)
 		if err := json.Unmarshal([]byte(jsonStr), &config); err != nil {
+			setLastError(sessionHandle, "request JSON is not valid: %v", err)
 			return -1
 		}
 	}
@@ -3722,6 +3736,8 @@ func httpcloak_stream_request(sessionHandle C.int64_t, requestJSON *C.char) (hcR
 		bodyBytes, err := decodeRequestBody(config.Body, config.BodyEncoding)
 		if err != nil {
 			cancel()
+			setLastError(sessionHandle, "request body could not be decoded as %s: %v",
+				config.BodyEncoding, err)
 			return -1
 		}
 		bodyReader = bytes.NewReader(bodyBytes)
@@ -3744,6 +3760,7 @@ func httpcloak_stream_request(sessionHandle C.int64_t, requestJSON *C.char) (hcR
 	resp, err := session.DoStream(ctx, req)
 	if err != nil {
 		cancel()
+		setLastError(sessionHandle, "%v", err)
 		return -1
 	}
 
@@ -3882,10 +3899,15 @@ func httpcloak_stream_request_async(sessionHandle C.int64_t, requestJSON *C.char
 		meta.StreamHandle = handle
 		metaJSON, err := json.Marshal(meta)
 		if err != nil {
+			httpcloak_stream_close(C.int64_t(handle))
 			fail("encode stream metadata: " + err.Error())
 			return
 		}
-		invokeCallback(int64(callbackID), string(metaJSON), "")
+		// A caller that cancelled by unregistering the callback never learns
+		// this handle, so nothing else would ever close the stream.
+		if !invokeCallback(int64(callbackID), string(metaJSON), "") {
+			httpcloak_stream_close(C.int64_t(handle))
+		}
 	}()
 }
 
@@ -3979,15 +4001,20 @@ func httpcloak_stream_read_raw(streamHandle C.int64_t, buffer unsafe.Pointer, bu
 	// Create a Go slice backed by the C buffer
 	buf := (*[1 << 30]byte)(buffer)[:size:size]
 
+	// A reader may return the last bytes together with io.EOF. Hand those
+	// bytes over first; the next call reports the EOF (or error) on its own.
 	n, err := stream.Read(buf)
+	if n > 0 {
+		return C.int(n)
+	}
 	if err != nil {
-		if err.Error() == "EOF" {
+		if errors.Is(err, io.EOF) {
 			return 0 // EOF
 		}
 		return -1 // Error
 	}
 
-	return C.int(n)
+	return 0
 }
 
 //export httpcloak_stream_close
