@@ -12,7 +12,7 @@ async function main() {
 
   // Test presets
   const presets = availablePresets();
-  console.log("Presets:", presets.slice(0, 5).join(", "), "...");
+  console.log("Presets:", Object.keys(presets).slice(0, 5).join(", "), "...");
   console.log("");
 
   // Create session

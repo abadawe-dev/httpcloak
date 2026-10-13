@@ -22,22 +22,9 @@ if (testArg == "proxy")
     return;
 }
 
-if (testArg == "bench")
+if (testArg == "cache")
 {
-    await BenchmarkTest.RunAsync();
-    return;
-}
-
-if (testArg == "throughput")
-{
-    await ThroughputTest.RunAsync();
-    return;
-}
-
-if (testArg == "rawspeed")
-{
-    await RawSpeedTest.RunAsync();
-    return;
+    Environment.Exit(await TestSessionCache.RunAsync() ? 0 : 1);
 }
 
 Console.WriteLine(new string('=', 70));

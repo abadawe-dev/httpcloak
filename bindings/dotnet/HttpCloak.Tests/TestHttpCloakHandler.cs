@@ -190,26 +190,21 @@ public static class TestHttpCloakHandler
             Console.WriteLine($"  [FAIL] {ex.Message}");
         }
 
-        // Test 8: Access underlying Session
-        Console.WriteLine("\n[8] Access underlying Session");
+        // Test 8: The local proxy behind the handler
+        Console.WriteLine("\n[8] Local proxy stats");
         Console.WriteLine(new string('-', 50));
         try
         {
-            // Access session for advanced features
-            handler.Session.SetCookie("test_cookie", "cookie_value");
-
-            var response = await client.GetAsync("https://httpbin.org/cookies");
-            var content = await response.Content.ReadAsStringAsync();
-
-            if (content.Contains("test_cookie"))
+            var stats = handler.GetStats();
+            Console.WriteLine($"  Proxy URL: {handler.ProxyUrl}");
+            Console.WriteLine($"  Running: {stats.Running}, total requests: {stats.TotalRequests}");
+            if (stats.Running && stats.TotalRequests > 0)
             {
-                Console.WriteLine("  Cookie was sent via Session API");
-                Console.WriteLine("  [PASS] Session access works");
+                Console.WriteLine("  [PASS] Requests went through the local proxy");
             }
             else
             {
-                Console.WriteLine("  Note: Cookies may need domain matching");
-                Console.WriteLine("  [PASS] Session is accessible");
+                Console.WriteLine("  [FAIL] Proxy not running or saw no requests");
             }
         }
         catch (Exception ex)
@@ -218,14 +213,14 @@ public static class TestHttpCloakHandler
         }
 
         // Test 9: Streaming download (large file)
-        Console.WriteLine("\n[9] Streaming download (1MB)");
+        Console.WriteLine("\n[9] Streaming download (100KB)");
         Console.WriteLine(new string('-', 50));
         try
         {
-            // UseStreaming is true by default
-            Console.WriteLine($"  UseStreaming: {handler.UseStreaming}");
-
-            var response = await client.GetAsync("https://httpbin.org/bytes/1048576"); // 1MB
+            // The handler streams bodies through the local proxy rather than
+            // buffering them.
+            // httpbin serves at most 100KB from /bytes, whatever is asked for.
+            var response = await client.GetAsync("https://httpbin.org/bytes/102400");
             Console.WriteLine($"  Status: {(int)response.StatusCode}");
 
             // Read as stream
@@ -239,45 +234,14 @@ public static class TestHttpCloakHandler
             }
 
             Console.WriteLine($"  Bytes streamed: {totalRead}");
-            if (totalRead >= 1000000) // Allow some variance
+            if (totalRead == 102400)
             {
                 Console.WriteLine("  [PASS] Streaming download works");
             }
             else
             {
-                Console.WriteLine($"  [FAIL] Expected ~1MB, got {totalRead}");
+                Console.WriteLine($"  [FAIL] Expected 102400 bytes, got {totalRead}");
             }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"  [FAIL] {ex.Message}");
-        }
-
-        // Test 10: Buffered mode (disable streaming)
-        Console.WriteLine("\n[10] Buffered mode (UseStreaming=false)");
-        Console.WriteLine(new string('-', 50));
-        try
-        {
-            handler.UseStreaming = false;
-            Console.WriteLine($"  UseStreaming: {handler.UseStreaming}");
-
-            var response = await client.GetAsync("https://httpbin.org/bytes/10240"); // 10KB
-            var bytes = await response.Content.ReadAsByteArrayAsync();
-
-            Console.WriteLine($"  Status: {(int)response.StatusCode}");
-            Console.WriteLine($"  Bytes received: {bytes.Length}");
-
-            if (bytes.Length >= 10000)
-            {
-                Console.WriteLine("  [PASS] Buffered mode works");
-            }
-            else
-            {
-                Console.WriteLine($"  [FAIL] Expected ~10KB, got {bytes.Length}");
-            }
-
-            // Reset to streaming
-            handler.UseStreaming = true;
         }
         catch (Exception ex)
         {

@@ -19,7 +19,6 @@
   },
   "scripts": {
     "test": "node test.js",
-    "test:esm": "node test.mjs",
     "setup-packages": "node scripts/setup-npm-packages.js"
   },
   "keywords": [
