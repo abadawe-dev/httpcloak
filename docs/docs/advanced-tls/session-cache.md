@@ -186,7 +186,7 @@ Both can coexist. A LocalProxy that registers per-tenant sessions can wire the c
 What the bindings do expose is a process-global cache backend:
 
 - Python: `httpcloak.SessionCacheBackend(get=..., put=..., delete=..., on_error=...)` plus `.register()`. After `register()`, every `Session` and `LocalProxy` constructed in the process uses the registered backend. See `bindings/python/httpcloak/client.py` for the full signature.
-- Node.js: `new SessionCacheBackend({ get, put, delete, onError })` plus `.register()`. Both sync and async callbacks supported.
+- Node.js: `new SessionCacheBackend({ get, put, delete, onError })` plus `.register()`. Both sync and async callbacks supported. The callbacks are JavaScript, so they only run when the event loop does: use the async request methods with a cache configured, since a `*Sync`, stream or fast-path call that needs a new handshake waits on a callback that can't run until the call returns, and hangs.
 - .NET: implement `ISessionCache` and pass it to `new SessionCacheBackend(impl)`, then call `Register()`. The wrapper pins the six callback delegates as instance fields so the GC can't collect them while the Go side still holds function pointers; `Dispose()` (or `using`) unregisters cleanly. `HttpCloakCache.ConfigureSessionCache(impl)` is a one-liner shorthand for construct+register, and `HttpCloakCache.ClearSessionCache()` drops the active backend.
 
 ```csharp
@@ -214,7 +214,7 @@ For namespacing across multiple "personas" sharing one backend, the bindings exp
 
 ## Operational notes
 
-Latency: a backend `Get` runs synchronously on cache miss before the lib decides whether to attempt resumption. The transport applies a 5-second timeout to the call (set in `getFromBackend` in `transport/tls_cache.go`), after which it falls back to a full handshake. Pick a backend that responds in single-digit milliseconds at p99. A slow backend turns into a tax on every cold-host request.
+Latency: a backend `Get` runs synchronously on cache miss before the lib decides whether to attempt resumption. The transport hands the call a context with a 5-second deadline (set in `getFromBackend` in `transport/tls_cache.go`), and a Go backend that honors it falls back to a full handshake once it expires. A binding callback isn't interrupted, though: the handshake waits for it to return, however long that takes, so a callback that hangs stalls the request with it. Pick a backend that responds in single-digit milliseconds at p99. A slow backend turns into a tax on every cold-host request.
 
 Writes are async. After a fresh handshake, the lib launches a goroutine that calls `Put` on the backend with a 5-second timeout. The request's response time isn't affected by backend write latency. Errors on `Put` fire the error callback and get dropped, since there's no caller to return them to. That's fine in practice (the next replica that needs the ticket will just do a fresh handshake), but it does mean you can't observe write failures except through the callback.
 

@@ -141,6 +141,8 @@ session.requestSync(method, url, options?): Response;
 
 These block the event loop. Don't use them inside an async server. They exist for scripts and CLIs where the event loop isn't a concern.
 
+One case where it is: a session cache set up with `configureSessionCache`. Its callbacks are JavaScript, so they need the event loop, and a sync call that does a new TLS handshake waits on a callback that can't run until that same call returns. The call hangs. The stream and fast-path methods block the same way, so stick to the async methods while a cache is configured.
+
 ### `RequestOptions`
 
 ```ts

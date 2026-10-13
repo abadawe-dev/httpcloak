@@ -4349,6 +4349,11 @@ class SessionCacheBackend {
  * This is a convenience function that creates and registers a SessionCacheBackend.
  * Supports both synchronous and asynchronous callbacks (auto-detected).
  *
+ * The callbacks run on the event loop, so use the async request methods while
+ * a cache is configured. A getSync/postSync/requestSync, stream or fast-path
+ * call that needs a new TLS handshake blocks the event loop while it waits on
+ * a callback that can only run once that call returns, and hangs.
+ *
  * @param {Object} options Cache configuration (same as SessionCacheBackend constructor)
  * @returns {SessionCacheBackend} The registered backend
  *
