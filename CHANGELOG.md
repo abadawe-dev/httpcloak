@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Less work per request on header handling**: the parts of the header pipeline that depend only on the preset are now worked out once per preset instead of on every request, caller headers are merged without recomputing the canonical form of each name, and response header maps are built in one pass. Nothing that goes on the wire changes, which every built-in preset's wire snapshot confirms.
 
+- **Node.js: blocking methods throw on a session with a JavaScript session cache, instead of hanging**: a cache set up with `configureSessionCache` runs its callbacks on the JavaScript thread. A `getSync`, `postSync` or `requestSync` call, a stream or fast-path call, `uploadStream` or `warmup` blocks that thread, so when it needed a new TLS handshake it waited on a callback that could not run until the call returned, and the process hung for good. These methods now throw an `HTTPCloakError` up front on any session that has such a cache, in both callback modes. That includes calls which would have reused a warm connection and worked; use the async methods on those sessions. A session keeps the cache it was created with, `clearSessionCache()` or not, so the check follows the session: sessions created with no cache configured, including after `clearSessionCache()`, are not affected, and forks follow their parent.
+
 ### Fixed
 
 - **No ECH lookup for IP addresses**: a request to an IP literal over HTTP/3 (or with ECH enabled on HTTP/2) looked up an HTTPS DNS record for the address itself, which cannot exist. It sent the address to a public resolver for nothing and added 200 to 600ms to the first connection to each address. IP literals now skip the lookup.

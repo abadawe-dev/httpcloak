@@ -141,7 +141,7 @@ session.requestSync(method, url, options?): Response;
 
 These block the event loop. Don't use them inside an async server. They exist for scripts and CLIs where the event loop isn't a concern.
 
-One case where it is: a session cache set up with `configureSessionCache`. Its callbacks are JavaScript, so they need the event loop, and a sync call that does a new TLS handshake waits on a callback that can't run until that same call returns. The call hangs. The stream and fast-path methods block the same way, so stick to the async methods while a cache is configured.
+One case where it is: a session cache set up with `configureSessionCache`. Its callbacks are JavaScript, so they need the JS thread, and a sync call that does a new TLS handshake would wait on a callback that can't run until that same call returns. So on a session created while a cache is configured, the sync, stream and fast-path methods, `uploadStream` and `warmup` throw an `HTTPCloakError` straight away instead of hanging. Use the async methods on those sessions. A session keeps the cache it was created with, so `clearSessionCache()` only frees up sessions created after it, and forks of a session follow their parent.
 
 ### `RequestOptions`
 

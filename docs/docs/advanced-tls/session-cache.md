@@ -186,7 +186,7 @@ Both can coexist. A LocalProxy that registers per-tenant sessions can wire the c
 What the bindings do expose is a process-global cache backend:
 
 - Python: `httpcloak.SessionCacheBackend(get=..., put=..., delete=..., on_error=...)` plus `.register()`. After `register()`, every `Session` and `LocalProxy` constructed in the process uses the registered backend. See `bindings/python/httpcloak/client.py` for the full signature.
-- Node.js: `new SessionCacheBackend({ get, put, delete, onError })` plus `.register()`. Both sync and async callbacks supported. The callbacks are JavaScript, so they only run when the event loop does: use the async request methods with a cache configured, since a `*Sync`, stream or fast-path call that needs a new handshake waits on a callback that can't run until the call returns, and hangs.
+- Node.js: `new SessionCacheBackend({ get, put, delete, onError })` plus `.register()`. Both sync and async callbacks supported. The callbacks are JavaScript, so they only run on the JS thread: use the async request methods with a cache configured. On a session created while a cache is set, the methods that block that thread (`*Sync`, streams, fast-path, `uploadStream`, `warmup`) throw an `HTTPCloakError`, since they would wait on a callback that can't run until they return.
 - .NET: implement `ISessionCache` and pass it to `new SessionCacheBackend(impl)`, then call `Register()`. The wrapper pins the six callback delegates as instance fields so the GC can't collect them while the Go side still holds function pointers; `Dispose()` (or `using`) unregisters cleanly. `HttpCloakCache.ConfigureSessionCache(impl)` is a one-liner shorthand for construct+register, and `HttpCloakCache.ClearSessionCache()` drops the active backend.
 
 ```csharp

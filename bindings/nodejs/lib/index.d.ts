@@ -1446,10 +1446,13 @@ export class SessionCacheBackend {
  *
  * Supports both synchronous and asynchronous callbacks (auto-detected).
  *
- * The callbacks run on the event loop, so use the async request methods while
- * a cache is configured. A getSync/postSync/requestSync, stream or fast-path
- * call that needs a new TLS handshake blocks the event loop while it waits on
- * a callback that can only run once that call returns, and hangs.
+ * The callbacks run on the JavaScript thread, so use the async request methods
+ * on sessions created while a cache is configured. On those sessions the
+ * methods that block that thread (the *Sync, stream and fast-path methods,
+ * uploadStream and warmup) would wait on a callback that cannot run until they
+ * return, so they throw an HTTPCloakError instead. A session keeps the cache it
+ * was created with, so clearSessionCache() lifts this only for sessions
+ * created after it.
  *
  * @param options Cache configuration
  * @returns The registered SessionCacheBackend instance

@@ -1303,15 +1303,21 @@ function parseResponse(resultPtr, elapsed = 0) {
   return new Response(data, elapsed);
 }
 
-/**
- * Parse a raw response handle returned by httpcloak_*_raw into a Response
- * with a binary Buffer body. Avoids the base64 round trip used by the JSON
- * path — binary bodies (PDFs, images, streams) land in memory once.
- * @param {Object} lib - Native library binding
- * @param {number|bigint} responseHandle
- * @param {number} [elapsed=0] - Elapsed milliseconds
- * @returns {Response}
- */
+// A JavaScript session cache runs its callbacks on the JS thread. A call that
+// blocks that thread and then needs a new TLS handshake waits on a callback
+// that cannot run until the call returns, so it would hang for good. Those
+// calls are refused on a session that has such a cache. A session keeps the
+// cache it was created with, so it is the session that is checked, not
+// whether a cache is configured now.
+function refuseIfSessionUsesJsCache(session, method) {
+  if (session._usesJsCache) {
+    throw new HTTPCloakError(
+      `${method}() blocks the JavaScript thread, which this session's cache needs to run its callbacks. ` +
+      "Use the async methods, or create the session while no session cache is configured."
+    );
+  }
+}
+
 /**
  * Why the most recent handle-returning call on a session failed. Those calls
  * return -1 and cannot carry a message, so without this every failure, from
@@ -1326,6 +1332,15 @@ function lastError(lib, sessionHandle, fallback) {
   return message || fallback;
 }
 
+/**
+ * Parse a raw response handle returned by httpcloak_*_raw into a Response
+ * with a binary Buffer body. Avoids the base64 round trip used by the JSON
+ * path: binary bodies (PDFs, images, streams) land in memory once.
+ * @param {Object} lib - Native library binding
+ * @param {number|bigint} responseHandle
+ * @param {number} [elapsed=0] - Elapsed milliseconds
+ * @returns {Response}
+ */
 function parseRawResponse(lib, responseHandle, elapsed = 0) {
   const bodyLen = lib.httpcloak_response_get_body_len(responseHandle);
   if (bodyLen < 0) {
@@ -1778,6 +1793,9 @@ class Session {
       config.tcp_df = tcpDf;
     }
 
+    // The library hands a session the cache configured when it is created and
+    // keeps it for the session's life, clearSessionCache() or not.
+    this._usesJsCache = _sessionCacheBackend !== null;
     this._handle = this._lib.httpcloak_session_new(JSON.stringify(config));
 
     if (this._handle === 0n || this._handle === 0) {
@@ -1827,6 +1845,7 @@ class Session {
    * @param {number} [options.timeout] - Timeout in milliseconds (default: 60000).
    */
   warmup(url, options = {}) {
+    refuseIfSessionUsesJsCache(this, "warmup");
     if (this._handle) {
       const timeoutMs = options.timeout || 0;
       const result = this._lib.httpcloak_session_warmup(this._handle, url, timeoutMs);
@@ -1859,6 +1878,7 @@ class Session {
       const session = Object.create(Session.prototype);
       session._lib = this._lib;
       session._handle = handle;
+      session._usesJsCache = this._usesJsCache;
       session.headers = { ...this.headers };
       session.auth = this.auth;
       forks.push(session);
@@ -1916,6 +1936,7 @@ class Session {
    * @returns {Response} Response object
    */
   getSync(url, options = {}) {
+    refuseIfSessionUsesJsCache(this, "getSync");
     // The get_raw entry has no exact_headers field, so a caller asking for one
     // goes down the generic request path instead of having it dropped in silence.
     if (options.exactHeaders) return this.requestSync("GET", url, options);
@@ -1980,6 +2001,7 @@ class Session {
    * @returns {Response} Response object
    */
   postSync(url, options = {}) {
+    refuseIfSessionUsesJsCache(this, "postSync");
     // The post_raw entry has no exact_headers field, so a caller asking for one
     // goes down the generic request path instead of having it dropped in silence.
     if (options.exactHeaders) return this.requestSync("POST", url, options);
@@ -2067,6 +2089,7 @@ class Session {
    * @returns {Response} Response object
    */
   requestSync(method, url, options = {}) {
+    refuseIfSessionUsesJsCache(this, "requestSync");
     let { body = null, json = null, data = null, files = null, headers = null, params = null, cookies = null, auth = null, timeout = null, fetchMode = null, allowRedirects = null, disableConditionalCache = false, disableClientHints = false, disableHighEntropyClientHints = false, disableRedirectReferer = false, exactHeaders = null, headerOrder = null } = options;
 
     const exact = normalizeExactHeaders(exactHeaders);
@@ -2923,6 +2946,7 @@ class Session {
     const session = Object.create(Session.prototype);
     session._lib = lib;
     session._handle = handle;
+    session._usesJsCache = false;
     session.headers = {};
     session.auth = null;
 
@@ -2951,6 +2975,7 @@ class Session {
     const session = Object.create(Session.prototype);
     session._lib = lib;
     session._handle = handle;
+    session._usesJsCache = false;
     session.headers = {};
     session.auth = null;
 
@@ -2980,6 +3005,7 @@ class Session {
    *   stream.close();
    */
   getStream(url, options = {}) {
+    refuseIfSessionUsesJsCache(this, "getStream");
     const { params, headers, cookies, timeout, allowRedirects = null, disableConditionalCache = false, disableClientHints = false, disableHighEntropyClientHints = false, disableRedirectReferer = false } = options;
 
     // Add params to URL
@@ -3061,6 +3087,7 @@ class Session {
    * @returns {StreamResponse} - Streaming response for chunked reading
    */
   postStream(url, options = {}) {
+    refuseIfSessionUsesJsCache(this, "postStream");
     const { body: bodyOpt, json: jsonBody, form, params, headers, cookies, timeout, allowRedirects = null, disableConditionalCache = false, disableClientHints = false, disableHighEntropyClientHints = false, disableRedirectReferer = false } = options;
 
     // Add params to URL
@@ -3154,6 +3181,7 @@ class Session {
    * @returns {StreamResponse} - Streaming response for chunked reading
    */
   requestStream(method, url, options = {}) {
+    refuseIfSessionUsesJsCache(this, "requestStream");
     const { body, params, headers, cookies, timeout, allowRedirects = null, disableConditionalCache = false, disableClientHints = false, disableHighEntropyClientHints = false, disableRedirectReferer = false, exactHeaders = null, headerOrder = null } = options;
 
     const exact = normalizeExactHeaders(exactHeaders);
@@ -3260,6 +3288,7 @@ class Session {
    *   fs.writeFileSync("file.zip", response.body);
    */
   getFast(url, options = {}) {
+    refuseIfSessionUsesJsCache(this, "getFast");
     const { headers = null, params = null, cookies = null, auth = null } = options;
 
     url = addParamsToUrl(url, params);
@@ -3336,6 +3365,7 @@ class Session {
    *   response.release();
    */
   postFast(url, options = {}) {
+    refuseIfSessionUsesJsCache(this, "postFast");
     let { body = null, headers = null, params = null, cookies = null, auth = null } = options;
 
     url = addParamsToUrl(url, params);
@@ -3427,6 +3457,7 @@ class Session {
    *   response.release();
    */
   requestFast(method, url, options = {}) {
+    refuseIfSessionUsesJsCache(this, "requestFast");
     let { body = null, headers = null, params = null, cookies = null, auth = null, timeout = null } = options;
 
     url = addParamsToUrl(url, params);
@@ -3554,6 +3585,7 @@ class Session {
    * @returns {Promise<Response>}
    */
   async uploadStream(method, url, chunks, options = {}) {
+    refuseIfSessionUsesJsCache(this, "uploadStream");
     const { headers = null, contentType = "application/octet-stream", timeout = null } = options;
     const mergedHeaders = this._mergeHeaders(headers) || {};
     const optsJson = JSON.stringify({
@@ -4349,10 +4381,13 @@ class SessionCacheBackend {
  * This is a convenience function that creates and registers a SessionCacheBackend.
  * Supports both synchronous and asynchronous callbacks (auto-detected).
  *
- * The callbacks run on the event loop, so use the async request methods while
- * a cache is configured. A getSync/postSync/requestSync, stream or fast-path
- * call that needs a new TLS handshake blocks the event loop while it waits on
- * a callback that can only run once that call returns, and hangs.
+ * The callbacks run on the JavaScript thread, so use the async request methods
+ * on sessions created while a cache is configured. On those sessions the
+ * methods that block that thread (the *Sync, stream and fast-path methods,
+ * uploadStream and warmup) would wait on a callback that cannot run until they
+ * return, so they throw an HTTPCloakError instead. A session keeps the cache it
+ * was created with, so clearSessionCache() lifts this only for sessions
+ * created after it.
  *
  * @param {Object} options Cache configuration (same as SessionCacheBackend constructor)
  * @returns {SessionCacheBackend} The registered backend
