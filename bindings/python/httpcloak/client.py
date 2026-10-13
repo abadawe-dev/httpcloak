@@ -320,30 +320,17 @@ class Preset:
         """
         Return list of all built-in preset names known to this binding version.
 
+        Built from the constants above, each name once, so a new constant can
+        never be left out of it.
+
         For the authoritative live list (which may include custom presets loaded
         at runtime), call `httpcloak.available_presets()` instead.
         """
-        return [
-            cls.CHROME_LATEST, cls.CHROME_LATEST_WINDOWS, cls.CHROME_LATEST_LINUX,
-            cls.CHROME_LATEST_MACOS, cls.CHROME_LATEST_IOS, cls.CHROME_LATEST_ANDROID,
-            cls.CHROME_149, cls.CHROME_149_WINDOWS, cls.CHROME_149_LINUX, cls.CHROME_149_MACOS,
-            cls.CHROME_148, cls.CHROME_148_WINDOWS, cls.CHROME_148_LINUX, cls.CHROME_148_MACOS,
-            cls.CHROME_148_IOS, cls.CHROME_148_ANDROID,
-            cls.CHROME_147, cls.CHROME_147_WINDOWS, cls.CHROME_147_LINUX, cls.CHROME_147_MACOS,
-            cls.CHROME_147_IOS, cls.CHROME_147_ANDROID,
-            cls.CHROME_146, cls.CHROME_146_WINDOWS, cls.CHROME_146_LINUX, cls.CHROME_146_MACOS,
-            cls.CHROME_146_IOS, cls.CHROME_146_ANDROID,
-            cls.CHROME_145, cls.CHROME_145_WINDOWS, cls.CHROME_145_LINUX, cls.CHROME_145_MACOS,
-            cls.CHROME_145_IOS, cls.CHROME_145_ANDROID,
-            cls.CHROME_144, cls.CHROME_144_WINDOWS, cls.CHROME_144_LINUX, cls.CHROME_144_MACOS,
-            cls.CHROME_144_IOS, cls.CHROME_144_ANDROID,
-            cls.CHROME_143, cls.CHROME_143_WINDOWS, cls.CHROME_143_LINUX, cls.CHROME_143_MACOS,
-            cls.CHROME_143_IOS, cls.CHROME_143_ANDROID,
-            cls.CHROME_141, cls.CHROME_133,
-            cls.FIREFOX_LATEST, cls.FIREFOX_148, cls.FIREFOX_133,
-            cls.SAFARI_LATEST, cls.SAFARI_18, cls.SAFARI_17_IOS, cls.SAFARI_18_IOS,
-            cls.SAFARI_LATEST_IOS,
-        ]
+        names: List[str] = []
+        for attr, value in vars(cls).items():
+            if attr.isupper() and isinstance(value, str) and value not in names:
+                names.append(value)
+        return names
 
 
 # HTTP status reason phrases

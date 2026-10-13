@@ -190,27 +190,15 @@ const Preset = {
    * @returns {string[]} List of preset names
    */
   all() {
-    return [
-      this.CHROME_LATEST, this.CHROME_LATEST_WINDOWS, this.CHROME_LATEST_LINUX,
-      this.CHROME_LATEST_MACOS, this.CHROME_LATEST_IOS, this.CHROME_LATEST_ANDROID,
-      this.CHROME_149, this.CHROME_149_WINDOWS, this.CHROME_149_LINUX, this.CHROME_149_MACOS,
-      this.CHROME_148, this.CHROME_148_WINDOWS, this.CHROME_148_LINUX, this.CHROME_148_MACOS,
-      this.CHROME_148_IOS, this.CHROME_148_ANDROID,
-      this.CHROME_147, this.CHROME_147_WINDOWS, this.CHROME_147_LINUX, this.CHROME_147_MACOS,
-      this.CHROME_147_IOS, this.CHROME_147_ANDROID,
-      this.CHROME_146, this.CHROME_146_WINDOWS, this.CHROME_146_LINUX, this.CHROME_146_MACOS,
-      this.CHROME_146_IOS, this.CHROME_146_ANDROID,
-      this.CHROME_145, this.CHROME_145_WINDOWS, this.CHROME_145_LINUX, this.CHROME_145_MACOS,
-      this.CHROME_145_IOS, this.CHROME_145_ANDROID,
-      this.CHROME_144, this.CHROME_144_WINDOWS, this.CHROME_144_LINUX, this.CHROME_144_MACOS,
-      this.CHROME_144_IOS, this.CHROME_144_ANDROID,
-      this.CHROME_143, this.CHROME_143_WINDOWS, this.CHROME_143_LINUX, this.CHROME_143_MACOS,
-      this.CHROME_143_IOS, this.CHROME_143_ANDROID,
-      this.CHROME_141, this.CHROME_133,
-      this.FIREFOX_LATEST, this.FIREFOX_148, this.FIREFOX_133,
-      this.SAFARI_LATEST, this.SAFARI_18, this.SAFARI_17_IOS, this.SAFARI_18_IOS,
-      this.SAFARI_LATEST_IOS,
-    ];
+    // Built from the constants above, each name once, so a new constant can
+    // never be left out of it.
+    const names = [];
+    for (const [key, value] of Object.entries(this)) {
+      if (/^[A-Z0-9_]+$/.test(key) && typeof value === "string" && !names.includes(value)) {
+        names.push(value);
+      }
+    }
+    return names;
   },
 };
 

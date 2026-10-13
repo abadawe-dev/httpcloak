@@ -80,12 +80,23 @@ sed -i "s/^version = \"[0-9]*\.[0-9]*\.[0-9]*\"/version = \"$NEW_VERSION\"/" "$S
 # (as the clib one did when the version moved into libVersion, so 1.7.2-beta.2
 # and the first 1.7.3 bump reported the previous version) fails here instead
 # of shipping quietly.
+#
+# The paths are relative to this directory, which the glob needs too: the
+# script has moved into dotnet/HttpCloak by now, so it used to match nothing
+# and skip every npm platform package. The version must sit between quotes or
+# tags, so 1.7.3 is not satisfied by 1.7.30 or 11.7.3.
+cd "$SCRIPT_DIR"
+version_re="[\">]${NEW_VERSION//./\\.}[\"<]"
 missing=0
 for f in nodejs/package.json python/pyproject.toml python/httpcloak/__init__.py \
          clib/httpcloak.go android/httpcloak/build.gradle.kts \
          nodejs/npm/*/package.json dotnet/HttpCloak/HttpCloak.csproj; do
-    [ -f "$SCRIPT_DIR/$f" ] || continue
-    if ! grep -q "$NEW_VERSION" "$SCRIPT_DIR/$f"; then
+    if [ ! -f "$f" ]; then
+        echo "ERROR: $f not found" >&2
+        missing=1
+        continue
+    fi
+    if ! grep -qE "$version_re" "$f"; then
         echo "ERROR: $f does not contain $NEW_VERSION" >&2
         missing=1
     fi
@@ -97,7 +108,7 @@ echo "Version bumped to $NEW_VERSION successfully!"
 echo ""
 echo "Files updated:"
 echo "  - bindings/nodejs/package.json (version + optionalDependencies)"
-echo "  - bindings/nodejs/npm/*/package.json (6 platform packages)"
+echo "  - bindings/nodejs/npm/*/package.json (the platform packages)"
 echo "  - bindings/python/pyproject.toml"
 echo "  - bindings/python/httpcloak/__init__.py"
 echo "  - bindings/clib/httpcloak.go"

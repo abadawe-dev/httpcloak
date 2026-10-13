@@ -116,6 +116,18 @@ func TestBindingPresetConstantsMatchRegistry(t *testing.T) {
 			t.Errorf("node: Preset.%s is %q, python has %q", constant, v, value)
 		}
 	}
+	// .NET spells the same constants in PascalCase: CHROME_155_IOS is
+	// Chrome155IOS. Compared by name too, so two swapped values fail here.
+	fold := func(constant string) string { return strings.ToLower(strings.ReplaceAll(constant, "_", "")) }
+	dotnetByFold := map[string]string{}
+	for constant, value := range dotnet.values {
+		dotnetByFold[fold(constant)] = value
+	}
+	for constant, value := range py.values {
+		if v, ok := dotnetByFold[fold(constant)]; !ok || v != value {
+			t.Errorf("dotnet: the constant for python's %s is %q, python has %q", constant, v, value)
+		}
+	}
 	if len(node.values) != len(py.values) || len(dotnet.values) != len(py.values) {
 		t.Errorf("constant counts differ: python %d, node %d, dotnet %d",
 			len(py.values), len(node.values), len(dotnet.values))
