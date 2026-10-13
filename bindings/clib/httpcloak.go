@@ -3621,6 +3621,7 @@ func httpcloak_stream_get(sessionHandle C.int64_t, url *C.char, optionsJSON *C.c
 	resp, err := session.DoStream(ctx, req)
 	if err != nil {
 		cancel()
+		setLastError(sessionHandle, "%v", err)
 		return -1
 	}
 
@@ -3687,6 +3688,7 @@ func httpcloak_stream_post(sessionHandle C.int64_t, url *C.char, body *C.char, o
 	resp, err := session.DoStream(ctx, req)
 	if err != nil {
 		cancel()
+		setLastError(sessionHandle, "%v", err)
 		return -1
 	}
 

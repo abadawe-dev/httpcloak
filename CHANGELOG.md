@@ -81,7 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`httpcloak_stream_read_raw` could drop the end of a body**: a reader may return its last bytes together with EOF, which is routine for decompressing readers, and the export checked for EOF before looking at the byte count, so those bytes were discarded. It now returns them and reports EOF on the next call.
 
-- **`httpcloak_stream_request` failures now say why**: it returned -1 without recording a reason, so every failure, from invalid request JSON to a refused connection, surfaced as the same generic message. The reason is now available from `httpcloak_last_error`, as it already was for `httpcloak_request_raw`.
+- **Streaming request failures now say why**: `httpcloak_stream_request`, `httpcloak_stream_get` and `httpcloak_stream_post` returned -1 without recording a reason, so every failure, from invalid request JSON to a refused connection, surfaced as the same generic message. The reason is now available from `httpcloak_last_error`, as it already was for `httpcloak_request_raw`.
 
 - **Synchronous requests no longer stop at 30 seconds regardless of the session's timeout**: `httpcloak_request_raw`, `httpcloak_request`, the get/post variants and the fast paths bounded a request without a per-request timeout at a flat 30s, so a session configured with a longer timeout was cut short unless every call repeated it. They now fall back to the session's own timeout, and to 30s only for a session without one. A restored session, whose timeout a binding cannot read back, was hit hardest.
 
