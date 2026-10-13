@@ -124,17 +124,17 @@ func TestChromeBrandListFollowsChromiumThrough155(t *testing.T) {
 	}
 }
 
-// No iOS preset for 154 or 155, for the reason given under
-// TestChrome153HasNoIOSPresetYet.
-func TestChrome154And155HaveNoIOSPresetYet(t *testing.T) {
-	for _, name := range []string{"chrome-154-ios", "chrome-155-ios"} {
+// No iOS preset for 154, for the reason given under
+// TestChrome153HasNoIOSPresetYet. 155 has one, from a capture.
+func TestChrome154HasNoIOSPresetYet(t *testing.T) {
+	for _, name := range []string{"chrome-154-ios"} {
 		if p := GetStrict(name); p != nil {
 			t.Errorf("%s is registered with UA %q; only add it from a capture", name, p.UserAgent)
 		}
 	}
 }
 
-// The -latest aliases move as a set, apart from iOS. This is the single home
+// The -latest aliases move as a set. This is the single home
 // for the assertion; move it to the next version's file rather than copying it.
 func TestChrome155LatestAliases(t *testing.T) {
 	for _, tc := range []struct{ alias, wantUA string }{
@@ -143,7 +143,8 @@ func TestChrome155LatestAliases(t *testing.T) {
 		{"chrome-latest-linux", "Chrome/155.0.0.0"},
 		{"chrome-latest-macos", "Chrome/155.0.0.0"},
 		{"chrome-latest-android", "Chrome/155.0.0.0"},
-		{"chrome-latest-ios", "CriOS/152.0.7977.64"},
+		{"chrome-latest-ios", "CriOS/155.0.8059.37"},
+		{"ios-chrome-latest", "CriOS/155.0.8059.37"},
 	} {
 		p := GetStrict(tc.alias)
 		if p == nil {

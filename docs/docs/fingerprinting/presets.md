@@ -36,7 +36,7 @@ Versions 133, 141, and 143 through 155. The 143-155 line ships per-OS variants; 
 |---|---|
 | Desktop | `chrome-155`, `chrome-155-windows`, `chrome-155-linux`, `chrome-155-macos` (and the same shape for 154, 153, 152 ...) |
 | Android | `chrome-155-android` (every version except 149) |
-| iOS     | `chrome-152-ios` is the newest; iOS stops at 152 for now (no 149 either) |
+| iOS     | `chrome-155-ios` is the newest; 143 to 152 plus 155 (no 149, 153 or 154) |
 
 Bare `chrome-155` resolves to the host OS at runtime via `runtime.GOOS`. On a Linux box, `chrome-155` gives you `chrome-155-linux`. For the same platform UA regardless of where the code runs, use the explicit variant.
 
@@ -50,10 +50,10 @@ chrome-latest-windows  → chrome-155-windows
 chrome-latest-linux    → chrome-155-linux
 chrome-latest-macos    → chrome-155-macos
 chrome-latest-android  → chrome-155-android
-chrome-latest-ios      → chrome-152-ios
+chrome-latest-ios      → chrome-155-ios
 ```
 
-Desktop and Android track 155. `chrome-latest-ios` stays on 152 on purpose: iOS Chrome spells its version out in full, including a build number that cannot be guessed from the major version, so an iOS preset only ever gets built from a real capture. `chrome-152-ios` is the newest one that exists; there is no `chrome-153-ios`, `chrome-154-ios` or `chrome-155-ios` yet. Code on `chrome-latest` keeps rolling, and code that pinned `chrome-148-windows` stays on exactly the fingerprint it pinned.
+Every alias tracks 155, iOS included. iOS Chrome spells its version out in full, including a build number that cannot be guessed from the major version, so an iOS preset only ever gets built from a real capture; `chrome-155-ios` comes from one, and there is no `chrome-153-ios` or `chrome-154-ios`. Code on `chrome-latest` keeps rolling, and code that pinned `chrome-148-windows` stays on exactly the fingerprint it pinned.
 
 ### Firefox
 
@@ -79,7 +79,7 @@ The older `<os>-<browser>-<version>` naming still works for code written against
 ios-chrome-148        → chrome-148-ios
 ios-safari-18         → safari-18-ios
 android-chrome-148    → chrome-148-android
-ios-chrome-latest     → chrome-152-ios
+ios-chrome-latest     → chrome-155-ios
 android-chrome-latest → chrome-155-android
 ```
 
@@ -209,6 +209,7 @@ safari-18            ja4=t13d2013h2_a09f3c656075_7f0f34a4126d  peetprint_hash=62
 safari-18-ios        ja4=t13d2013h2_a09f3c656075_7f0f34a4126d  peetprint_hash=62b834de729e78a9f0ebd1dd099314a7  akamai_fingerprint_hash=90d8353e47699c4c38ecd773e9b5a089
 chrome-148-ios       ja4=t13d2013h2_a09f3c656075_7f0f34a4126d  peetprint_hash=62b834de729e78a9f0ebd1dd099314a7  akamai_fingerprint_hash=c52879e43202aeb92740be6e8c86ea96
 chrome-152-ios       ja4=t13d2013h2_a09f3c656075_7f0f34a4126d  peetprint_hash=62b834de729e78a9f0ebd1dd099314a7  akamai_fingerprint_hash=c52879e43202aeb92740be6e8c86ea96
+chrome-155-ios       ja4=t13d2013h2_a09f3c656075_7f0f34a4126d  peetprint_hash=62b834de729e78a9f0ebd1dd099314a7  akamai_fingerprint_hash=c52879e43202aeb92740be6e8c86ea96
 ios-chrome-latest    ja4=t13d2013h2_a09f3c656075_7f0f34a4126d  peetprint_hash=62b834de729e78a9f0ebd1dd099314a7  akamai_fingerprint_hash=c52879e43202aeb92740be6e8c86ea96
 ```
 
@@ -230,7 +231,7 @@ Things to spot:
 
 - Every Chrome desktop variant lands on the same JA4 / peetprint / akamai. The TLS handshake is identical across Windows / Linux / macOS Chrome. Only the User-Agent and `sec-ch-ua-platform` header tell you which OS you're on.
 - Android Chrome shares the same fingerprint as desktop Chrome. Same TLS, same H2. The wire-level difference is the UA string (Mobile Safari/537.36) and `sec-ch-ua-mobile: ?1`.
-- Chrome on iOS shows up as Safari at the wire level, since iOS WebKit forces every browser onto the system networking stack. `chrome-152-ios` shares its TLS handshake and JA4 hash with `safari-18-ios`. They split only on H2 SETTINGS values (chrome-152-ios advertises `2,3,4,9` vs Safari's `2,4,3,5,9`) and the User-Agent.
+- Chrome on iOS shows up as Safari at the wire level, since iOS WebKit forces every browser onto the system networking stack. `chrome-155-ios` (like 152) shares its TLS handshake and JA4 hash with `safari-18-ios`. They split only on H2 SETTINGS values (Chrome on iOS advertises `2,3,4,9` vs Safari's `2,4,3,5,9`) and the User-Agent.
 - Firefox and Safari each get their own JA4 / peetprint / akamai. Different cipher list, different SETTINGS, different pseudo-header order.
 
 :::tip

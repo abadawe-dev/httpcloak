@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "preset": {
+    "name": "chrome-155-ios",
+    "based_on": "chrome-152-ios",
+    "headers": {
+      "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/155.0.8059.37 Mobile/15E148 Safari/604.1"
+    }
+  }
+}

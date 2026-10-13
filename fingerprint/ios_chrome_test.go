@@ -25,7 +25,7 @@ func TestIOSChromeHeaderOrder(t *testing.T) {
 		"sec-fetch-mode", "accept-language", "priority", "accept-encoding",
 	}
 
-	for _, name := range []string{"chrome-148-ios", "chrome-150-ios", "chrome-151-ios", "chrome-152-ios"} {
+	for _, name := range []string{"chrome-148-ios", "chrome-150-ios", "chrome-151-ios", "chrome-152-ios", "chrome-155-ios"} {
 		p := Get(name)
 		if p == nil {
 			t.Errorf("%s not registered", name)
@@ -83,6 +83,16 @@ func TestIOSChromeUserAgentIsCaptured(t *testing.T) {
 	if !strings.Contains(q.UserAgent, "CriOS/152.0.7977.64") {
 		t.Errorf("chrome-152-ios UA = %q, want the captured CriOS/152.0.7977.64", q.UserAgent)
 	}
+	// 155 comes from a capture on iOS 26.6.2.
+	r := Get("chrome-155-ios")
+	if r == nil {
+		t.Fatal("chrome-155-ios not registered")
+	}
+	for _, want := range []string{"CriOS/155.0.8059.37", "iPhone OS 26_6_2"} {
+		if !strings.Contains(r.UserAgent, want) {
+			t.Errorf("chrome-155-ios UA = %q, want the captured %q", r.UserAgent, want)
+		}
+	}
 	for _, guess := range []string{"8080.60", "7990.44"} {
 		if strings.Contains(q.UserAgent, guess) || strings.Contains(p.UserAgent, guess) {
 			t.Errorf("an iOS preset still carries the invented build number %s", guess)
@@ -93,7 +103,7 @@ func TestIOSChromeUserAgentIsCaptured(t *testing.T) {
 // iOS Chrome sends no client hints at all, so neither Chrome 152 wire change
 // reaches it either.
 func TestIOSChromeSendsNoChromeOnlyMachinery(t *testing.T) {
-	for _, name := range []string{"chrome-150-ios", "chrome-151-ios", "chrome-152-ios"} {
+	for _, name := range []string{"chrome-150-ios", "chrome-151-ios", "chrome-152-ios", "chrome-155-ios"} {
 		p := Get(name)
 		if p == nil {
 			continue

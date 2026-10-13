@@ -3255,12 +3255,28 @@ func AndroidChrome155() *Preset {
 	return AndroidChrome154()
 }
 
-// There is deliberately no IOSChrome153. The CriOS User-Agent carries a full
-// build number (152 was 152.0.7977.64) that no rule derives from the major
-// version, and shipping a preset whose UA names the wrong build is the kind of
-// silently wrong fingerprint that is worse than a missing one. The same holds
-// for 154 and 155. An iOS preset lands when a capture does; until then
-// chrome-152-ios is the newest iOS preset.
+// There is deliberately no IOSChrome153 or IOSChrome154. The CriOS User-Agent
+// carries a full build number (152 was 152.0.7977.64) that no rule derives
+// from the major version, and shipping a preset whose UA names the wrong build
+// is the kind of silently wrong fingerprint that is worse than a missing one.
+// An iOS preset lands when a capture does, and 155 is the one that did.
+
+// IOSChrome155 returns Chrome 155 on iOS.
+//
+// CAPTURED from a real iPhone (iOS 26.6.2, CriOS/155.0.8059.37) against
+// tls.peet.ws: ja3_hash ecdf4f49dd59effc439639da29186671, ja4
+// t13d2013h2_a09f3c656075_7f0f34a4126d, peetprint 62b834de729e78a9f0ebd1dd099314a7
+// and Akamai c52879e43202aeb92740be6e8c86ea96, all identical to 152, and the
+// same eight headers in the same order with the same values. Only the
+// User-Agent moves, so the JSON is a headers-only delta on chrome-152-ios.
+// Accept-Language follows the device's locale rather than Chrome, so the
+// preset keeps en-US like every other.
+func IOSChrome155() *Preset {
+	if p := LookupCustom("chrome-155-ios"); p != nil {
+		return p
+	}
+	return IOSChrome152()
+}
 
 // IOSChrome143 returns Chrome 143 on iOS fingerprint preset
 // Note: iOS Chrome uses WebKit (Apple requirement), so it has Safari's TLS AND HTTP/2 fingerprint
@@ -3866,6 +3882,7 @@ var presets = map[string]func() *Preset{
 	"chrome-155-windows":  Chrome155Windows,
 	"chrome-155-linux":    Chrome155Linux,
 	"chrome-155-macos":    Chrome155macOS,
+	"chrome-155-ios":      IOSChrome155,
 	"chrome-155-android":  AndroidChrome155,
 	"chrome-151":          Chrome151,
 	"chrome-151-windows":  Chrome151Windows,
@@ -3874,11 +3891,10 @@ var presets = map[string]func() *Preset{
 	"chrome-151-ios":      IOSChrome151,
 	"chrome-151-android":  AndroidChrome151,
 
-	// -latest aliases (always point to the newest version). Desktop and Android
-	// track 155. chrome-latest-ios stays on 152 on purpose: the iOS User-Agent
-	// carries a full build number that cannot be derived from the major
-	// version, so an iOS preset is only ever as new as its last capture (see
-	// the note above IOSChrome143).
+	// -latest aliases (always point to the newest version). All of Chrome
+	// tracks 155. iOS only moves when a capture lands, because the iOS
+	// User-Agent carries a full build number that cannot be derived from the
+	// major version (see the note above IOSChrome143).
 	"chrome-latest":          Chrome155,
 	"chrome-latest-windows":  Chrome155Windows,
 	"chrome-latest-linux":    Chrome155Linux,
@@ -3888,7 +3904,7 @@ var presets = map[string]func() *Preset{
 	"firefox-latest-linux":   Firefox148Linux,
 	"firefox-latest-macos":   Firefox148macOS,
 	"safari-latest":          Safari18,
-	"chrome-latest-ios":      IOSChrome152,
+	"chrome-latest-ios":      IOSChrome155,
 	"safari-latest-ios":      IOSSafari18,
 	"chrome-latest-android":  AndroidChrome155,
 
@@ -3909,7 +3925,7 @@ var presets = map[string]func() *Preset{
 	"android-chrome-146":    AndroidChrome146,
 	"android-chrome-147":    AndroidChrome147,
 	"android-chrome-148":    AndroidChrome148,
-	"ios-chrome-latest":     IOSChrome152,
+	"ios-chrome-latest":     IOSChrome155,
 	"ios-safari-latest":     IOSSafari18,
 	"android-chrome-latest": AndroidChrome155,
 }

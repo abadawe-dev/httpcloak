@@ -23,7 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   The Python, Node and .NET preset constants gain both 152 and 153; they had stopped at 151, so `chrome-152` was reachable only as a raw string in those bindings.
 
-  There is no `chrome-153-ios`. The iOS User-Agent carries a full build number that no rule derives from the major version, so an iOS preset is only ever as new as its last capture, and `chrome-latest-ios` stays on 152 until one lands. Note also that Chrome moved to a two-week release cycle with 153, so the version presets will need refreshing about twice as often as before.
+  There is no `chrome-153-ios` or `chrome-154-ios`. The iOS User-Agent carries a full build number that no rule derives from the major version, so an iOS preset is only ever as new as its last capture, and neither version was captured. Note also that Chrome moved to a two-week release cycle with 153, so the version presets will need refreshing about twice as often as before.
+
+- **`chrome-155-ios` preset**: built from a real iPhone capture, and `chrome-latest-ios` now resolves to it. Only the User-Agent moves (`CriOS/155.0.8059.37` on iOS 26.6.2); the TLS handshake, HTTP/2 settings and header block are the same as 152's, which the capture confirms. Exposed as a constant in Python, Node and .NET.
 
 ### Changed
 
@@ -121,7 +123,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`configure()` takes every session option in Python and Node.js**: the module-level default session could only be given the ten options `configure()` listed, so `ja3`, `disable_http3`, `tls_only` and the rest could not be set on it at all. In Node.js the typings already declared every `Session` option on `configure()`, and the runtime dropped all but nine without a word. Both now pass every option through to the session, and a module-level call that overrides one option, such as `httpcloak.get(url, preset=...)` in Python, keeps the rest of the configured ones. An unknown option is an error, as it is for `Session`.
 
-- **`android-chrome-latest` and `ios-chrome-latest` track the newest presets again**: the old-style spellings of the `-latest` aliases were left on Chrome 148 when `chrome-latest-android` and `chrome-latest-ios` moved on, so code using them was several versions behind without knowing it. They now resolve to the same presets as the new spellings, `chrome-155-android` and `chrome-152-ios`, and send byte for byte what those send.
+- **`android-chrome-latest` and `ios-chrome-latest` track the newest presets again**: the old-style spellings of the `-latest` aliases were left on Chrome 148 when `chrome-latest-android` and `chrome-latest-ios` moved on, so code using them was several versions behind without knowing it. They now resolve to the same presets as the new spellings, `chrome-155-android` and `chrome-155-ios`, and send byte for byte what those send.
 
 - **The Node.js typings declare every preset constant**: `index.d.ts` stopped at Chrome 151, so `Preset.CHROME_152` through `Preset.CHROME_155`, `Preset.FIREFOX_148`, the Safari `-latest` names and several aliases worked at runtime but failed to type-check. The typings now declare exactly what the runtime object defines, and a test holds the Python, Node.js and .NET preset constants to the registry and to each other.
 

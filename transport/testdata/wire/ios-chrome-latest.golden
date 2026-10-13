@@ -73,7 +73,7 @@ HEADERS stream=1 flags=0x25 exclusive=false dep=0 weight=255
   incremental name=1 value-huffman=true                        :authority: 127.0.0.1:PORT
   incremental name=4 value-huffman=false                       :path: /a
   incremental name=literal huffman=true value-huffman=true     sec-fetch-dest: document
-  incremental name=58 value-huffman=true                       user-agent: Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/152.0.7977.64 Mobile/15E148 Safari/604.1
+  incremental name=58 value-huffman=true                       user-agent: Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/155.0.8059.37 Mobile/15E148 Safari/604.1
   incremental name=19 value-huffman=true                       accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
   incremental name=literal huffman=true value-huffman=true     sec-fetch-site: none
   incremental name=literal huffman=true value-huffman=true     sec-fetch-mode: navigate
@@ -86,7 +86,7 @@ HEADERS stream=3 flags=0x25 exclusive=false dep=0 weight=255
   indexed 71                                                   :authority: 127.0.0.1:PORT
   incremental name=4 value-huffman=true                        :path: /b?q=1
   indexed 70                                                   sec-fetch-dest: document
-  indexed 69                                                   user-agent: Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/152.0.7977.64 Mobile/15E148 Safari/604.1
+  indexed 69                                                   user-agent: Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/155.0.8059.37 Mobile/15E148 Safari/604.1
   indexed 68                                                   accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
   indexed 67                                                   sec-fetch-site: none
   indexed 66                                                   sec-fetch-mode: navigate
@@ -99,7 +99,7 @@ HEADERS stream=5 flags=0x25 exclusive=false dep=0 weight=255
   indexed 72                                                   :authority: 127.0.0.1:PORT
   incremental name=4 value-huffman=true                        :path: /b?q=2
   indexed 71                                                   sec-fetch-dest: document
-  indexed 70                                                   user-agent: Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/152.0.7977.64 Mobile/15E148 Safari/604.1
+  indexed 70                                                   user-agent: Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/155.0.8059.37 Mobile/15E148 Safari/604.1
   indexed 69                                                   accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
   indexed 68                                                   sec-fetch-site: none
   indexed 67                                                   sec-fetch-mode: navigate
@@ -112,7 +112,7 @@ HEADERS stream=7 flags=0x24 exclusive=false dep=0 weight=255
   indexed 73                                                   :authority: 127.0.0.1:PORT
   incremental name=4 value-huffman=false                       :path: /c
   incremental name=72 value-huffman=true                       sec-fetch-dest: empty
-  indexed 72                                                   user-agent: Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/152.0.7977.64 Mobile/15E148 Safari/604.1
+  indexed 72                                                   user-agent: Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/155.0.8059.37 Mobile/15E148 Safari/604.1
   incremental name=19 value-huffman=false                      accept: */*
   incremental name=71 value-huffman=true                       sec-fetch-site: cross-site
   incremental name=71 value-huffman=true                       sec-fetch-mode: cors
@@ -129,7 +129,7 @@ GET /a HTTP/1.1
 Host: 127.0.0.1:PORT
 Connection: keep-alive
 Sec-Fetch-Dest: document
-User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/152.0.7977.64 Mobile/15E148 Safari/604.1
+User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/155.0.8059.37 Mobile/15E148 Safari/604.1
 Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
 Sec-Fetch-Site: none
 Sec-Fetch-Mode: navigate
@@ -140,7 +140,7 @@ GET /b?q=1 HTTP/1.1
 Host: 127.0.0.1:PORT
 Connection: keep-alive
 Sec-Fetch-Dest: document
-User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/152.0.7977.64 Mobile/15E148 Safari/604.1
+User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/155.0.8059.37 Mobile/15E148 Safari/604.1
 Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
 Sec-Fetch-Site: none
 Sec-Fetch-Mode: navigate
@@ -151,7 +151,7 @@ GET /b?q=2 HTTP/1.1
 Host: 127.0.0.1:PORT
 Connection: keep-alive
 Sec-Fetch-Dest: document
-User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/152.0.7977.64 Mobile/15E148 Safari/604.1
+User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/155.0.8059.37 Mobile/15E148 Safari/604.1
 Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
 Sec-Fetch-Site: none
 Sec-Fetch-Mode: navigate
@@ -162,7 +162,7 @@ POST /c HTTP/1.1
 Host: 127.0.0.1:PORT
 Connection: keep-alive
 Sec-Fetch-Dest: empty
-User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/152.0.7977.64 Mobile/15E148 Safari/604.1
+User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/155.0.8059.37 Mobile/15E148 Safari/604.1
 Accept: */*
 Sec-Fetch-Site: cross-site
 Sec-Fetch-Mode: cors
@@ -205,7 +205,7 @@ HEADERS
   literal name-ref static=true 0 never=false huffman=true "127.0.0.1:PORT"
   literal name-ref static=true 1 never=false huffman=true "/a"
   literal name="sec-fetch-dest" name-huffman=true never=false huffman=true "document"
-  literal name-ref static=true 95 never=false huffman=true "Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/152.0.7977.64 Mobile/15E148 Safari/604.1"
+  literal name-ref static=true 95 never=false huffman=true "Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/155.0.8059.37 Mobile/15E148 Safari/604.1"
   literal name-ref static=true 29 never=false huffman=true "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
   literal name="sec-fetch-site" name-huffman=true never=false huffman=true "none"
   literal name="sec-fetch-mode" name-huffman=true never=false huffman=true "navigate"
@@ -220,7 +220,7 @@ HEADERS
   literal name-ref static=true 0 never=false huffman=true "127.0.0.1:PORT"
   literal name-ref static=true 1 never=false huffman=true "/b?q=1"
   literal name="sec-fetch-dest" name-huffman=true never=false huffman=true "document"
-  literal name-ref static=true 95 never=false huffman=true "Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/152.0.7977.64 Mobile/15E148 Safari/604.1"
+  literal name-ref static=true 95 never=false huffman=true "Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/155.0.8059.37 Mobile/15E148 Safari/604.1"
   literal name-ref static=true 29 never=false huffman=true "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
   literal name="sec-fetch-site" name-huffman=true never=false huffman=true "none"
   literal name="sec-fetch-mode" name-huffman=true never=false huffman=true "navigate"
@@ -235,7 +235,7 @@ HEADERS
   literal name-ref static=true 0 never=false huffman=true "127.0.0.1:PORT"
   literal name-ref static=true 1 never=false huffman=true "/b?q=2"
   literal name="sec-fetch-dest" name-huffman=true never=false huffman=true "document"
-  literal name-ref static=true 95 never=false huffman=true "Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/152.0.7977.64 Mobile/15E148 Safari/604.1"
+  literal name-ref static=true 95 never=false huffman=true "Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/155.0.8059.37 Mobile/15E148 Safari/604.1"
   literal name-ref static=true 29 never=false huffman=true "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
   literal name="sec-fetch-site" name-huffman=true never=false huffman=true "none"
   literal name="sec-fetch-mode" name-huffman=true never=false huffman=true "navigate"
@@ -250,7 +250,7 @@ HEADERS
   literal name-ref static=true 0 never=false huffman=true "127.0.0.1:PORT"
   literal name-ref static=true 1 never=false huffman=true "/c"
   literal name="sec-fetch-dest" name-huffman=true never=false huffman=true "empty"
-  literal name-ref static=true 95 never=false huffman=true "Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/152.0.7977.64 Mobile/15E148 Safari/604.1"
+  literal name-ref static=true 95 never=false huffman=true "Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/155.0.8059.37 Mobile/15E148 Safari/604.1"
   indexed static=true 29
   literal name="sec-fetch-site" name-huffman=true never=false huffman=true "cross-site"
   literal name="sec-fetch-mode" name-huffman=true never=false huffman=true "cors"
@@ -265,7 +265,7 @@ DATA len=7
 {
   "version": 1,
   "preset": {
-    "name": "chrome-152-ios",
+    "name": "chrome-155-ios",
     "tls": {
       "client_hello": "ios-18",
       "quic_client_hello": "ios-18-quic"
@@ -338,7 +338,7 @@ DATA len=7
       "quic_initial_connection_receive_window": 16777216
     },
     "headers": {
-      "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/152.0.7977.64 Mobile/15E148 Safari/604.1",
+      "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/155.0.8059.37 Mobile/15E148 Safari/604.1",
       "values": {
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Encoding": "gzip, deflate, br",

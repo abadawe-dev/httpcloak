@@ -1202,11 +1202,12 @@ export const Preset: {
   CHROME_154_LINUX: string;
   CHROME_154_MACOS: string;
   CHROME_154_ANDROID: string;
-  // Chrome 155 (adds image/jxl to Accept; TLS unchanged)
+  // Chrome 155 (desktop and Android add image/jxl to Accept; TLS unchanged; iOS captured)
   CHROME_155: string;
   CHROME_155_WINDOWS: string;
   CHROME_155_LINUX: string;
   CHROME_155_MACOS: string;
+  CHROME_155_IOS: string;
   CHROME_155_ANDROID: string;
 
   // Chrome 152 (trust anchors, plus a greased signature algorithm on TCP)

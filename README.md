@@ -1026,7 +1026,7 @@ response.Protocol
 
 | Browser | Versions | Platform suffixes | PQ | HTTP/3 |
 |---------|----------|-------------------|:--:|:------:|
-| Chrome | 143 to 155, `latest` | `-windows` `-linux` `-macos` `-android` `-ios` (iOS up to 152) | yes | yes |
+| Chrome | 143 to 155, `latest` | `-windows` `-linux` `-macos` `-android` `-ios` (iOS: 143 to 152, and 155) | yes | yes |
 | Chrome | 133, 141 | none | yes | no |
 | Firefox | 148, `latest` | `-windows` `-linux` `-macos` | yes | no |
 | Firefox | 133 | `-windows` `-linux` `-macos` | no | no |

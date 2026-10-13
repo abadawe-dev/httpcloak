@@ -385,8 +385,8 @@ const { availablePresets } = require("httpcloak");
 
 console.log(availablePresets());
 // ['chrome-latest', 'chrome-155', 'chrome-155-windows', 'chrome-155-android', 'chrome-154',
-//  ..., 'chrome-152-ios', 'firefox-148', 'safari-18', ...]
-// Desktop and Android Chrome go up to 155; iOS Chrome stops at chrome-152-ios.
+//  ..., 'chrome-155-ios', 'firefox-148', 'safari-18', ...]
+// Desktop and Android Chrome go up to 155; iOS Chrome has 143 to 152 and 155.
 ```
 
 ## Response Object

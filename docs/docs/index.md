@@ -135,7 +135,7 @@ Console.WriteLine(resp.StatusCode);
 - **`chrome-latest` aliases**: `chrome-latest`, `chrome-latest-windows`,
   `chrome-latest-linux`, `chrome-latest-macos`, `chrome-latest-android`,
   `chrome-latest-ios`. Auto-track the newest shipped Chrome major
-  (155, or 152 for iOS).
+  (155).
 
 ### Bindings
 

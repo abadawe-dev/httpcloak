@@ -25,7 +25,7 @@ The `-latest` aliases point to the newest tracked version. They're not separate 
 | `chrome-latest-windows` | `chrome-155-windows` |
 | `chrome-latest-linux` | `chrome-155-linux` |
 | `chrome-latest-macos` | `chrome-155-macos` |
-| `chrome-latest-ios` | `chrome-152-ios` (stays behind on purpose; see below) |
+| `chrome-latest-ios` | `chrome-155-ios` |
 | `chrome-latest-android` | `chrome-155-android` |
 | `firefox-latest` | `firefox-148` |
 | `firefox-latest-windows` | `firefox-148-windows` |
@@ -34,17 +34,16 @@ The `-latest` aliases point to the newest tracked version. They're not separate 
 | `safari-latest` | `safari-18` |
 | `safari-latest-ios` | `safari-18-ios` |
 
-`chrome-latest-ios` stays on 152 while everything else tracks 155. iOS Chrome spells
-its version out in full, including a build number that cannot be derived from the
-major version, so each iOS preset waits on a real capture rather than being generated.
-`chrome-152-ios` is built from two, and there is no `chrome-153-ios`, `chrome-154-ios`
-or `chrome-155-ios` yet.
+iOS Chrome spells its version out in full, including a build number that cannot be
+derived from the major version, so each iOS preset is built from a real capture rather
+than generated. That is why there is no `chrome-153-ios` or `chrome-154-ios`: no capture
+of either was made. `chrome-155-ios` comes from one.
 
 The old-style names are kept for back-compat and follow the same targets:
 
 | Alias | Resolves to |
 |---|---|
-| `ios-chrome-latest` | `chrome-152-ios` |
+| `ios-chrome-latest` | `chrome-155-ios` |
 | `ios-safari-latest` | `safari-18-ios` |
 | `android-chrome-latest` | `chrome-155-android` |
 
@@ -105,6 +104,7 @@ The Chrome desktop family. Versions 143 through 146 are Go-defined in `fingerpri
 | `chrome-152-linux` | `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36` | `"Chromium";v="152", "Not?A_Brand";v="24", "Google Chrome";v="152"` | As above. |
 | `chrome-152-macos` | `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36` | `"Chromium";v="152", "Not?A_Brand";v="24", "Google Chrome";v="152"` | As above. |
 | `chrome-152-android` | `Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36` | `"Chromium";v="152", "Not?A_Brand";v="24", "Google Chrome";v="152"` | As above, with `sec-ch-ua-mobile: ?1`. |
+| `chrome-155-ios` | `Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/155.0.8059.37 Mobile/15E148 Safari/604.1` | not sent | Headers-only over 152: same TLS, HTTP/2 and header block, measured against a real iPhone capture. |
 | `chrome-152-ios` | `Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/152.0.7977.64 Mobile/15E148 Safari/604.1` | not sent | WebKit TLS, so neither 152 wire change applies. Built from real captures. |
 | `chrome-149-windows` | `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36` | `"Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"` | Inherits TLS from `chrome-148-windows`. |
 | `chrome-149-linux` | `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36` | `"Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"` | Inherits TLS from `chrome-148-linux`. |
