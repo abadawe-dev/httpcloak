@@ -58,7 +58,7 @@ sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
 # Update clib httpcloak.go version string
 echo "  -> clib/httpcloak.go"
 cd "$SCRIPT_DIR/clib"
-sed -i "s/return C.CString(\"[0-9]*\.[0-9]*\.[0-9]*\")/return C.CString(\"$NEW_VERSION\")/" httpcloak.go
+sed -i "s/^const libVersion = \".*\"/const libVersion = \"$NEW_VERSION\"/" httpcloak.go
 
 # Update Python __init__.py version string
 echo "  -> python/httpcloak/__init__.py"
@@ -75,6 +75,22 @@ fi
 # Update Android library version
 echo "  -> android/httpcloak/build.gradle.kts"
 sed -i "s/^version = \"[0-9]*\.[0-9]*\.[0-9]*\"/version = \"$NEW_VERSION\"/" "$SCRIPT_DIR/android/httpcloak/build.gradle.kts"
+
+# Every file must now carry the new version. A pattern that stops matching
+# (as the clib one did when the version moved into libVersion, so 1.7.2-beta.2
+# and the first 1.7.3 bump reported the previous version) fails here instead
+# of shipping quietly.
+missing=0
+for f in nodejs/package.json python/pyproject.toml python/httpcloak/__init__.py \
+         clib/httpcloak.go android/httpcloak/build.gradle.kts \
+         nodejs/npm/*/package.json dotnet/HttpCloak/HttpCloak.csproj; do
+    [ -f "$SCRIPT_DIR/$f" ] || continue
+    if ! grep -q "$NEW_VERSION" "$SCRIPT_DIR/$f"; then
+        echo "ERROR: $f does not contain $NEW_VERSION" >&2
+        missing=1
+    fi
+done
+[ "$missing" -eq 0 ] || exit 1
 
 echo ""
 echo "Version bumped to $NEW_VERSION successfully!"

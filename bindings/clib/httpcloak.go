@@ -2615,7 +2615,7 @@ func httpcloak_free_string(str *C.char) {
 // bumped with the nine binding version files and the five optionalDependencies
 // pins; it was missed for 1.7.2-beta.2, so every binding reported 1.6.11 off a
 // 1.7.2b2 wheel.
-const libVersion = "1.7.2"
+const libVersion = "1.7.3"
 
 // httpcloak_trim_memory returns freed memory to the operating system and blocks
 // until it has.

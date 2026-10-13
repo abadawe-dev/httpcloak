@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.3] - 2026-10-13
+
 ### Added
 
 - **Android binding**: a Kotlin library (`bindings/android`) over the same C library, cross-compiled with the NDK for `arm64-v8a`, `armeabi-v7a`, `x86_64` and `x86`, and reached through a JNI bridge that only marshals. Requests are `suspend` functions that abort the request when their coroutine is cancelled, with blocking variants for background threads and Java. Streaming, streaming uploads, cookies, proxies, persistence, forking, custom presets and pools, the local proxy and the TLS session cache all carry over. A session on a phone sends the same TLS and HTTP/2 fingerprint as the same preset on a desktop.

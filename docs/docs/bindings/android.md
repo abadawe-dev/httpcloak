@@ -22,7 +22,7 @@ then depend on it:
 
 ```kotlin
 repositories { mavenLocal() }
-dependencies { implementation("io.github.sardanioss:httpcloak-android:1.7.2") }
+dependencies { implementation("io.github.sardanioss:httpcloak-android:1.7.3") }
 ```
 
 Or build the AAR alone with `./gradlew :httpcloak:assembleRelease` and take it from `httpcloak/build/outputs/aar/`. Building needs Go, a JDK 17+ and the Android SDK with NDK 28.
