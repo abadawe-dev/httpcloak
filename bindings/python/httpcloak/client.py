@@ -4519,12 +4519,15 @@ def configure(
     retry: int = 0,
     retry_on_status: Optional[List[int]] = None,
     prefer_ipv4: bool = False,
+    **session_options: Any,
 ) -> None:
     """
     Configure defaults for module-level functions.
 
     This creates/recreates the default session with the specified settings.
     All subsequent calls to httpcloak.get(), httpcloak.post(), etc. will use these defaults.
+    Any other Session option (ja3, disable_http3, tls_only, local_address and
+    so on) can be passed as well and goes straight to the session.
 
     Args:
         preset: Browser preset (default: "chrome-146")
@@ -4539,6 +4542,7 @@ def configure(
         retry: Number of retries on failure (default: 0, no retries)
         retry_on_status: List of status codes to retry on (default: None — only consulted when retry > 0)
         prefer_ipv4: Prefer IPv4 addresses over IPv6 (default: False)
+        **session_options: Any other Session keyword argument
 
     Example:
         import httpcloak
@@ -4563,8 +4567,7 @@ def configure(
         # Apply auth to headers if provided
         final_headers = _apply_auth(headers, auth) or {}
 
-        # Store config
-        _default_config = {
+        config = {
             "preset": preset,
             "proxy": proxy,
             "timeout": timeout,
@@ -4574,25 +4577,25 @@ def configure(
             "max_redirects": max_redirects,
             "retry": retry,
             "retry_on_status": retry_on_status,
-            "headers": final_headers,
             "prefer_ipv4": prefer_ipv4,
+            **session_options,
         }
 
-        # Create new session with config
-        _default_session = Session(
-            preset=preset,
-            proxy=proxy,
-            timeout=timeout,
-            http_version=http_version,
-            verify=verify,
-            allow_redirects=allow_redirects,
-            max_redirects=max_redirects,
-            retry=retry,
-            retry_on_status=retry_on_status,
-            prefer_ipv4=prefer_ipv4,
-        )
+        # Create the session first, so an unknown option fails here and leaves
+        # the previous defaults in place.
+        session = Session(**config)
         if final_headers:
-            _default_session.headers.update(final_headers)
+            session.headers.update(final_headers)
+        _default_config = {**config, "headers": final_headers}
+        _default_session = session
+
+
+def _default_session_options(overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """The configured Session options, with any per-call overrides on top."""
+    options = {k: v for k, v in _default_config.items() if k != "headers"}
+    if overrides:
+        options.update(overrides)
+    return options
 
 
 def load_preset(path: str) -> str:
@@ -5435,32 +5438,11 @@ def _get_default_session() -> Session:
     if _default_session is None:
         with _default_session_lock:
             if _default_session is None:
-                preset = _default_config.get("preset", "chrome-146")
-                proxy = _default_config.get("proxy")
-                timeout = _default_config.get("timeout", 30)
-                http_version = _default_config.get("http_version", "auto")
-                verify = _default_config.get("verify", True)
-                allow_redirects = _default_config.get("allow_redirects", True)
-                max_redirects = _default_config.get("max_redirects", 10)
-                retry = _default_config.get("retry", 0)
-                retry_on_status = _default_config.get("retry_on_status")
+                session = Session(**_default_session_options())
                 headers = _default_config.get("headers", {})
-                prefer_ipv4 = _default_config.get("prefer_ipv4", False)
-
-                _default_session = Session(
-                    preset=preset,
-                    proxy=proxy,
-                    timeout=timeout,
-                    http_version=http_version,
-                    verify=verify,
-                    allow_redirects=allow_redirects,
-                    max_redirects=max_redirects,
-                    retry=retry,
-                    retry_on_status=retry_on_status,
-                    prefer_ipv4=prefer_ipv4,
-                )
                 if headers:
-                    _default_session.headers.update(headers)
+                    session.headers.update(headers)
+                _default_session = session
     return _default_session
 
 
@@ -5497,39 +5479,16 @@ def _get_session_for_request(kwargs: dict) -> Tuple[Session, bool]:
     if not has_override:
         return _get_default_session(), False
 
-    # Get current defaults and apply overrides
-    final_preset = preset if preset is not None else _default_config.get("preset", "chrome-146")
-    final_proxy = proxy if proxy is not None else _default_config.get("proxy")
-    final_tcp_proxy = tcp_proxy if tcp_proxy is not None else _default_config.get("tcp_proxy")
-    final_udp_proxy = udp_proxy if udp_proxy is not None else _default_config.get("udp_proxy")
-    final_timeout = _default_config.get("timeout", 30)
-    final_http_version = http_version if http_version is not None else _default_config.get("http_version", "auto")
-    final_verify = verify if verify is not None else _default_config.get("verify", True)
-    final_allow_redirects = allow_redirects if allow_redirects is not None else _default_config.get("allow_redirects", True)
-    final_max_redirects = max_redirects if max_redirects is not None else _default_config.get("max_redirects", 10)
-    final_retry = retry if retry is not None else _default_config.get("retry", 0)
-    final_retry_on_status = retry_on_status if retry_on_status is not None else _default_config.get("retry_on_status")
-    final_prefer_ipv4 = prefer_ipv4 if prefer_ipv4 is not None else _default_config.get("prefer_ipv4", False)
-    final_connect_to = connect_to if connect_to is not None else _default_config.get("connect_to")
-    final_ech_config_domain = ech_config_domain if ech_config_domain is not None else _default_config.get("ech_config_domain")
-
-    # Create temporary session with overrides
-    temp_session = Session(
-        preset=final_preset,
-        proxy=final_proxy,
-        tcp_proxy=final_tcp_proxy,
-        udp_proxy=final_udp_proxy,
-        timeout=final_timeout,
-        http_version=final_http_version,
-        verify=final_verify,
-        allow_redirects=final_allow_redirects,
-        max_redirects=final_max_redirects,
-        retry=final_retry,
-        retry_on_status=final_retry_on_status,
-        prefer_ipv4=final_prefer_ipv4,
-        connect_to=final_connect_to,
-        ech_config_domain=final_ech_config_domain,
-    )
+    # Start from the configured defaults, every option configure() was given,
+    # and apply the overrides on top
+    overrides = {
+        "preset": preset, "proxy": proxy, "tcp_proxy": tcp_proxy, "udp_proxy": udp_proxy,
+        "verify": verify, "allow_redirects": allow_redirects, "http_version": http_version,
+        "max_redirects": max_redirects, "retry": retry, "retry_on_status": retry_on_status,
+        "prefer_ipv4": prefer_ipv4, "connect_to": connect_to, "ech_config_domain": ech_config_domain,
+    }
+    temp_session = Session(**_default_session_options(
+        {k: v for k, v in overrides.items() if v is not None}))
 
     # Copy default headers
     default_headers = _default_config.get("headers", {})

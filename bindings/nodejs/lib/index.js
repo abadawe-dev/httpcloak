@@ -3649,7 +3649,10 @@ let _defaultSession = null;
 let _defaultConfig = {};
 
 /**
- * Configure defaults for module-level functions
+ * Configure defaults for module-level functions.
+ *
+ * Takes every option a Session takes, plus default headers and auth, and
+ * replaces the default session with one built from them.
  * @param {Object} options - Configuration options
  * @param {string} [options.preset="chrome-146"] - Browser preset
  * @param {Object} [options.headers] - Default headers
@@ -3664,19 +3667,7 @@ let _defaultConfig = {};
  * @param {number[]} [options.retryOnStatus] - Status codes to retry on (only consulted when retry > 0)
  */
 function configure(options = {}) {
-  const {
-    preset = "chrome-146",
-    headers = null,
-    auth = null,
-    proxy = null,
-    timeout = 30,
-    httpVersion = "auto",
-    verify = true,
-    allowRedirects = true,
-    maxRedirects = 10,
-    retry = 0,
-    retryOnStatus = null,
-  } = options;
+  const { headers = null, auth = null, ...sessionOptions } = options;
 
   // Close existing session
   if (_defaultSession) {
@@ -3684,38 +3675,21 @@ function configure(options = {}) {
     _defaultSession = null;
   }
 
-  // Apply auth to headers
-  let finalHeaders = applyAuth(headers, auth) || {};
-
-  // Store config
   _defaultConfig = {
-    preset,
-    proxy,
-    timeout,
-    httpVersion,
-    verify,
-    allowRedirects,
-    maxRedirects,
-    retry,
-    retryOnStatus,
-    headers: finalHeaders,
+    sessionOptions,
+    headers: applyAuth(headers, auth) || {},
   };
+  _defaultSession = _createDefaultSession();
+}
 
-  // Create new session
-  _defaultSession = new Session({
-    preset,
-    proxy,
-    timeout,
-    httpVersion,
-    verify,
-    allowRedirects,
-    maxRedirects,
-    retry,
-    retryOnStatus,
-  });
-  if (Object.keys(finalHeaders).length > 0) {
-    Object.assign(_defaultSession.headers, finalHeaders);
+// The session options pass straight through, so the defaults are Session's own.
+function _createDefaultSession() {
+  const session = new Session(_defaultConfig.sessionOptions || {});
+  const headers = _defaultConfig.headers || {};
+  if (Object.keys(headers).length > 0) {
+    Object.assign(session.headers, headers);
   }
+  return session;
 }
 
 /**
@@ -3723,31 +3697,7 @@ function configure(options = {}) {
  */
 function _getDefaultSession() {
   if (!_defaultSession) {
-    const preset = _defaultConfig.preset || "chrome-146";
-    const proxy = _defaultConfig.proxy || null;
-    const timeout = _defaultConfig.timeout || 30;
-    const httpVersion = _defaultConfig.httpVersion || "auto";
-    const verify = _defaultConfig.verify !== undefined ? _defaultConfig.verify : true;
-    const allowRedirects = _defaultConfig.allowRedirects !== undefined ? _defaultConfig.allowRedirects : true;
-    const maxRedirects = _defaultConfig.maxRedirects || 10;
-    const retry = _defaultConfig.retry !== undefined ? _defaultConfig.retry : 0;
-    const retryOnStatus = _defaultConfig.retryOnStatus || null;
-    const headers = _defaultConfig.headers || {};
-
-    _defaultSession = new Session({
-      preset,
-      proxy,
-      timeout,
-      httpVersion,
-      verify,
-      allowRedirects,
-      maxRedirects,
-      retry,
-      retryOnStatus,
-    });
-    if (Object.keys(headers).length > 0) {
-      Object.assign(_defaultSession.headers, headers);
-    }
+    _defaultSession = _createDefaultSession();
   }
   return _defaultSession;
 }
