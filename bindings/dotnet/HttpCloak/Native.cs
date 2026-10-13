@@ -12,6 +12,66 @@ internal static class Native
     static Native()
     {
         NativeLibrary.SetDllImportResolver(typeof(Native).Assembly, DllImportResolver);
+        RestoreActivationSignalStack();
+    }
+
+    // The Go runtime in a c-shared library adds SA_ONSTACK to every signal
+    // handler that already exists when it starts. For the CoreCLR activation
+    // signal (SIGRTMIN, used to suspend threads for a GC) that is fatal: the
+    // handler's call chain is deep enough to overflow the small alternate
+    // signal stack once it is moved there, and the kernel then kills the
+    // process with a bare SIGSEGV (exit 139, no Go or .NET output). The
+    // runtime sends this signal to its own threads while they run managed
+    // code, not to threads it knows are in native code, so giving the handler
+    // back its original flags restores the behaviour CoreCLR expects. What
+    // remains is a narrow window: a signal sent just as a thread leaves managed
+    // code for Go would run the handler on the Go stack, which Go's SA_ONSTACK
+    // rule exists to avoid. That window is far smaller than the certain crash
+    // this removes. See GitHub issue #89.
+    private static unsafe void RestoreActivationSignalStack()
+    {
+        // The struct offsets below are glibc's 64-bit layout; there is no
+        // 32-bit Linux build of the library to need another.
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux) || IntPtr.Size != 8)
+            return;
+
+        try
+        {
+            // Any export blocks until the Go runtime has finished starting,
+            // and that includes installing its signal handlers. Stripping the
+            // flag before that point would be undone.
+            FreeString(Version());
+
+            if (!NativeLibrary.TryLoad("libc.so.6", out IntPtr libc))
+                return;
+            if (!NativeLibrary.TryGetExport(libc, "sigaction", out IntPtr sigactionPtr) ||
+                !NativeLibrary.TryGetExport(libc, "__libc_current_sigrtmin", out IntPtr sigrtminPtr))
+                return;
+
+            var sigaction = (delegate* unmanaged<int, byte*, byte*, int>)sigactionPtr;
+            var sigrtmin = (delegate* unmanaged<int>)sigrtminPtr;
+
+            // glibc struct sigaction (generic layout, verified on x64; arm64
+            // uses the same layout): handler (8 bytes), sa_mask (128 bytes),
+            // then int sa_flags at offset 136.
+            const int SaFlagsOffset = 136;
+            const int SA_ONSTACK = 0x08000000;
+            byte* act = stackalloc byte[256];
+            int sig = sigrtmin();
+            if (sigaction(sig, null, act) != 0)
+                return;
+            if (*(IntPtr*)act == IntPtr.Zero || *(IntPtr*)act == (IntPtr)1) // SIG_DFL / SIG_IGN
+                return;
+            int flags = *(int*)(act + SaFlagsOffset);
+            if ((flags & SA_ONSTACK) == 0)
+                return;
+            *(int*)(act + SaFlagsOffset) = flags & ~SA_ONSTACK;
+            sigaction(sig, act, null);
+        }
+        catch
+        {
+            // Best effort. Never let this break loading the library.
+        }
     }
 
     private static IntPtr DllImportResolver(string libraryName, System.Reflection.Assembly assembly, DllImportSearchPath? searchPath)
