@@ -80,18 +80,29 @@ func (r *StreamResponse) Read(p []byte) (n int, err error) {
 	return r.reader.Read(p)
 }
 
-// Close closes the response body and cancels the context
+// Close closes the response body and cancels the stream context.
+//
+// On HTTP/2 the body is closed first. Closing a fully read body there lets the
+// stream wait for the server's END_STREAM, where cancelling first reset it
+// with RST_STREAM(CANCEL) on a response that had succeeded (#117). Everywhere
+// else the context is cancelled first, as before: an HTTP/1.1 body drains on
+// Close to keep the connection reusable, so closing an endless stream (SSE, a
+// long download) before cancelling it would block for good.
 func (r *StreamResponse) Close() error {
-	if r.cancel != nil {
+	if r.Protocol != "h2" && r.cancel != nil {
 		r.cancel()
 	}
 	if r.decompressor != nil {
 		r.decompressor.Close()
 	}
+	var err error
 	if r.rawReader != nil {
-		return r.rawReader.Close()
+		err = r.rawReader.Close()
 	}
-	return nil
+	if r.cancel != nil {
+		r.cancel() // a no-op after the first call
+	}
+	return err
 }
 
 // ReadAll reads the entire response body into memory
