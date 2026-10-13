@@ -46,9 +46,11 @@ static jmethodID g_cache_error;
 // Marshalling helpers
 // ---------------------------------------------------------------------------
 
-// Java String -> malloc'd, NUL-terminated UTF-8. NULL stays NULL.
+// Java String -> malloc'd, NUL-terminated UTF-8. NULL stays NULL, and so does
+// anything converted while an exception is pending, since no further JNI call
+// is allowed then; callers check ExceptionCheck before using the result.
 static char *utf8_from_java(JNIEnv *env, jstring s) {
-    if (s == NULL) return NULL;
+    if (s == NULL || (*env)->ExceptionCheck(env)) return NULL;
     jbyteArray bytes = (*env)->CallObjectMethod(env, s, g_string_get_bytes, g_utf8);
     if (bytes == NULL) return NULL;
     jsize len = (*env)->GetArrayLength(env, bytes);
@@ -61,9 +63,9 @@ static char *utf8_from_java(JNIEnv *env, jstring s) {
     return out;
 }
 
-// UTF-8 -> Java String, borrowing the input. NULL stays NULL.
+// UTF-8 -> Java String, borrowing the input. NULL stays NULL, as above.
 static jstring java_from_utf8(JNIEnv *env, const char *s) {
-    if (s == NULL) return NULL;
+    if (s == NULL || (*env)->ExceptionCheck(env)) return NULL;
     jsize len = (jsize) strlen(s);
     jbyteArray bytes = (*env)->NewByteArray(env, len);
     if (bytes == NULL) return NULL;
@@ -117,6 +119,21 @@ static void on_async_result(int64_t callback_id, const char *response_json, cons
     if (env == NULL) return;
     jstring json = java_from_utf8(env, response_json);
     jstring err = java_from_utf8(env, error);
+    if ((*env)->ExceptionCheck(env)) {
+        // A conversion failed, usually an OutOfMemoryError on a large body.
+        // Calling into Java with it pending is not allowed, and the result
+        // must still arrive or the waiting call never resumes, so it arrives
+        // as an error.
+        (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, json);
+        (*env)->DeleteLocalRef(env, err);
+        json = NULL;
+        err = (*env)->NewStringUTF(env, "httpcloak: could not pass the response to Java (out of memory?)");
+        if (err == NULL) {
+            detach(env, attached);
+            return;
+        }
+    }
     (*env)->CallStaticVoidMethod(env, g_callbacks_class, g_on_async_result,
                                  (jlong) callback_id, json, err);
     (*env)->DeleteLocalRef(env, json);
@@ -139,8 +156,12 @@ static char *cache_lookup(jmethodID method, const char *key) {
     JNIEnv *env = attach(&attached);
     if (env == NULL) return NULL;
     jstring jkey = java_from_utf8(env, key);
-    jstring value = (*env)->CallStaticObjectMethod(env, g_callbacks_class, method, jkey);
-    char *result = (*env)->ExceptionCheck(env) ? NULL : utf8_from_java(env, value);
+    jstring value = NULL;
+    char *result = NULL;
+    if (!(*env)->ExceptionCheck(env)) {
+        value = (*env)->CallStaticObjectMethod(env, g_callbacks_class, method, jkey);
+        if (!(*env)->ExceptionCheck(env)) result = utf8_from_java(env, value);
+    }
     (*env)->DeleteLocalRef(env, jkey);
     (*env)->DeleteLocalRef(env, value);
     detach(env, attached);
@@ -156,9 +177,12 @@ static int cache_store(jmethodID method, const char *key, const char *value, int
     if (env == NULL) return -1;
     jstring jkey = java_from_utf8(env, key);
     jstring jvalue = java_from_utf8(env, value);
-    jboolean ok = (*env)->CallStaticBooleanMethod(env, g_callbacks_class, method,
-                                                  jkey, jvalue, (jlong) ttl_seconds);
-    if ((*env)->ExceptionCheck(env)) ok = JNI_FALSE;
+    jboolean ok = JNI_FALSE;
+    if (!(*env)->ExceptionCheck(env)) {
+        ok = (*env)->CallStaticBooleanMethod(env, g_callbacks_class, method,
+                                             jkey, jvalue, (jlong) ttl_seconds);
+        if ((*env)->ExceptionCheck(env)) ok = JNI_FALSE;
+    }
     (*env)->DeleteLocalRef(env, jkey);
     (*env)->DeleteLocalRef(env, jvalue);
     detach(env, attached);
@@ -182,8 +206,11 @@ static int on_cache_delete(const char *key) {
     JNIEnv *env = attach(&attached);
     if (env == NULL) return -1;
     jstring jkey = java_from_utf8(env, key);
-    jboolean ok = (*env)->CallStaticBooleanMethod(env, g_callbacks_class, g_cache_delete, jkey);
-    if ((*env)->ExceptionCheck(env)) ok = JNI_FALSE;
+    jboolean ok = JNI_FALSE;
+    if (!(*env)->ExceptionCheck(env)) {
+        ok = (*env)->CallStaticBooleanMethod(env, g_callbacks_class, g_cache_delete, jkey);
+        if ((*env)->ExceptionCheck(env)) ok = JNI_FALSE;
+    }
     (*env)->DeleteLocalRef(env, jkey);
     detach(env, attached);
     return ok ? 0 : -1;
@@ -196,7 +223,9 @@ static void on_cache_error(const char *operation, const char *key, const char *e
     jstring jop = java_from_utf8(env, operation);
     jstring jkey = java_from_utf8(env, key);
     jstring jerr = java_from_utf8(env, error);
-    (*env)->CallStaticVoidMethod(env, g_callbacks_class, g_cache_error, jop, jkey, jerr);
+    if (!(*env)->ExceptionCheck(env)) {
+        (*env)->CallStaticVoidMethod(env, g_callbacks_class, g_cache_error, jop, jkey, jerr);
+    }
     (*env)->DeleteLocalRef(env, jop);
     (*env)->DeleteLocalRef(env, jkey);
     (*env)->DeleteLocalRef(env, jerr);

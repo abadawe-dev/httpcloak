@@ -110,8 +110,17 @@ jobs:
   build-android:
     name: Build Android library
     runs-on: ubuntu-latest
+    # Runs the Gradle wrapper, so it gets a read-only token and none left in
+    # the checkout's git config.
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Validate the Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
 
       - name: Set up Go
         uses: actions/setup-go@v5
