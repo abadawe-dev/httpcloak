@@ -135,18 +135,18 @@ func dumpHeader(h http.Header) string {
 // request carries, so none is left to an encoder's map-iteration fallback.
 //
 // The list is assembled in three passes: explicitOrder (the caller's order for
-// this request — Request.HeaderOrder if it names one, else SetHeaderOrder, and
+// this request: Request.HeaderOrder if it names one, else SetHeaderOrder, and
 // empty when there is neither); then presetOrder, so a partial
 // custom list does not cost the caller the preset's ordering for the headers
 // they did not name; then everything still unplaced, sorted by name. An empty
-// explicitOrder needs no special case — pass one falls through and pass two
+// explicitOrder needs no special case: pass one falls through and pass two
 // lays down the preset table on its own. Names are lowercased and
 // de-duplicated. userHeaders may be nil when the caller has already merged
 // them into header.
 //
 // Both remainders were previously emitted in Go map order, which is randomised
 // on every range. A header order that differs per request is itself a
-// fingerprint, and a strong one — no browser produces one. Sorted is not what a
+// fingerprint, and a strong one, since no browser produces one. Sorted is not what a
 // browser sends either, but it is stable, which is the detectable part.
 func frozenCompleteHeaderOrder(explicitOrder, presetOrder []string, header http.Header, userHeaders map[string][]string) []string {
 	seen := make(map[string]bool, len(explicitOrder)+len(presetOrder)+len(header)+len(userHeaders))
@@ -259,7 +259,7 @@ func frozenApplyPresetHeaders(httpReq *http.Request, preset *fingerprint.Preset,
 		// leaves every browser preset untouched.
 		if presetSendsSecFetch(preset) && sniffXHRMode(httpReq.Method, userHeaders) {
 			// Preserve any explicitly user-supplied Sec-Fetch-Mode/Dest/Site;
-			// the sniff coercion is for "user said nothing, infer XHR" — once
+			// the sniff coercion is for "user said nothing, infer XHR"; once
 			// they pin a value (e.g. mode=no-cors, dest=image, site=same-origin)
 			// the request shape is intentional and our preset header defaults
 			// (which assume navigation) should yield. Without this, callers
@@ -287,13 +287,13 @@ func frozenApplyPresetHeaders(httpReq *http.Request, preset *fingerprint.Preset,
 			httpReq.Header.Del("Upgrade-Insecure-Requests")
 			httpReq.Header.Del("upgrade-insecure-requests")
 			// Real browsers send Accept: */* on fetch()/XHR unless the user
-			// explicitly asked for something else — no user Accept means swap
+			// explicitly asked for something else; no user Accept means swap
 			// the navigation Accept (text/html,...) for the CORS default.
 			if headerVal(userHeaders, "Accept") == "" {
 				httpReq.Header.Set("Accept", "*/*")
 			}
 			// CORS uses u=1,i priority (lower urgency than navigation's u=0,i)
-			// — used as the static fallback when the preset has no per-dest
+			// and is the static fallback when the preset has no per-dest
 			// PriorityTable. Presets that ship a PriorityTable (Chrome 147+)
 			// override this below.
 			if httpReq.Header.Get("Priority") != "" {
@@ -348,13 +348,13 @@ func frozenApplyPresetHeaders(httpReq *http.Request, preset *fingerprint.Preset,
 	// Set header order for HTTP/2 and HTTP/3 fingerprinting
 	// Chrome uses the same header order for both H2 and H3 (same request_->extra_headers vector)
 	//
-	// Important: use H2HeaderOrder() (the full HPACK position table) — NOT
+	// Important: use H2HeaderOrder() (the full HPACK position table), NOT
 	// preset.HeaderOrder (the default emit set). The two differ: HeaderOrder
 	// only lists headers Chrome sends on every request, while H2HeaderOrder
 	// also reserves slots for situational headers (cache-control on F5,
 	// content-type/content-length on POST, origin/referer on cross-origin,
 	// cookie on subsequent requests). Using HeaderOrder here was a real
-	// fingerprinting bug — when callers added cache-control/content-type/
+	// fingerprinting bug: when callers added cache-control/content-type/
 	// cookie, the fork couldn't slot them and appended them after `priority`
 	// instead of placing them where real Chrome does.
 	//
