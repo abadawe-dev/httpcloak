@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -634,6 +635,13 @@ func GetECHDNSServers() []string {
 // FetchECHConfigs fetches ECH configs from DNS HTTPS records for the given hostname.
 // Returns nil if no ECH configs are available (this is not an error).
 func FetchECHConfigs(ctx context.Context, hostname string) ([]byte, error) {
+	// An IP literal has no HTTPS record to look up, and asking a resolver for
+	// one sends the address out in a query that should never have left the
+	// machine; it also cost 200 to 600ms on the first dial to each address.
+	if net.ParseIP(strings.Trim(hostname, "[]")) != nil {
+		return nil, nil
+	}
+
 	// Check cache first. A fresh entry may be POSITIVE (has an ECH config) or
 	// NEGATIVE (ConfigList == nil, meaning "this host has no ECH"). Both short-
 	// circuit here, so a no-ECH host is not re-queried on every dial.
