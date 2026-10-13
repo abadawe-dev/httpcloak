@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   There is no `chrome-153-ios`. The iOS User-Agent carries a full build number that no rule derives from the major version, so an iOS preset is only ever as new as its last capture, and `chrome-latest-ios` stays on 152 until one lands. Note also that Chrome moved to a two-week release cycle with 153, so the version presets will need refreshing about twice as often as before.
 
+### Changed
+
+- **Less work per request on header handling**: the parts of the header pipeline that depend only on the preset are now worked out once per preset instead of on every request, caller headers are merged without recomputing the canonical form of each name, and response header maps are built in one pass. Nothing that goes on the wire changes, which every built-in preset's wire snapshot confirms.
+
 ### Fixed
 
 - **No ECH lookup for IP addresses**: a request to an IP literal over HTTP/3 (or with ECH enabled on HTTP/2) looked up an HTTPS DNS record for the address itself, which cannot exist. It sent the address to a public resolver for nothing and added 200 to 600ms to the first connection to each address. IP literals now skip the lookup.
