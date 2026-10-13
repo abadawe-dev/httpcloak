@@ -95,6 +95,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The Python session cache no longer leaks every value it returns**: a `get` or ECH `get` callback handed its result back as bytes, which makes Python keep a reference to each one it can never release, so every ticket the cache served stayed in memory for the life of the process. Measured, 20,000 lookups of a 20 KB value grew the process by 383 MB. Results now go back as the address of a buffer the backend keeps alive only until it has served 128 more, and the same lookups grow it by 3 MB.
 
+- **The Node.js session cache no longer crashes under concurrent requests**: with a cache configured through `configureSessionCache`, a few async requests opening connections at the same time could crash the process or hand a lookup another key's value. A `get` or ECH `get` callback's string was converted into memory that was released before the library copied it, which is harmless one lookup at a time and not otherwise. Measured, 16 sessions at a time crashed within a few rounds every run. Results are now handed back in a buffer the binding keeps alive, and the same load runs clean in both the sync and the async callback modes.
+
 ## [1.7.2] - 2026-09-03
 
 Worth taking if you use HTTP/3 with a custom fingerprint. A preset built from a

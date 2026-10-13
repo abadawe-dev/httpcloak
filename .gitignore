@@ -66,6 +66,8 @@ internal_tests/
 # deliberate list rather than an open door.
 !/tests/python/test_json_alias.py
 !/tests/python/test_session_cache_backend.py
+# Node regression locks, on the same terms.
+!/tests/nodejs/test_session_cache_concurrency.js
 
 # Local workspace config (points at machine-local fork paths)
 go.work

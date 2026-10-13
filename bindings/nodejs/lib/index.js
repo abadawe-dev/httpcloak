@@ -3995,6 +3995,28 @@ class LocalProxy {
 let _sessionCacheBackend = null;
 let _sessionCacheCallbackPtrs = {};
 
+// Strings the sync-mode get callbacks have handed to native code. The native
+// side copies the result after the callback returns, and when the callback
+// was relayed from a library thread, koffi has already released the memory it
+// converted a returned JS string into by then, so concurrent lookups read each
+// other's values or crash. A Buffer is passed by its own memory instead, so
+// the last RETAINED_CACHE_RESULTS results are kept alive here and the oldest
+// is dropped as each new one arrives.
+const RETAINED_CACHE_RESULTS = 128;
+const _retainedCacheResults = [];
+
+function retainCacheResult(result) {
+  if (!result || typeof result !== 'string') {
+    return result || null;
+  }
+  const buf = Buffer.from(result + '\0', 'utf8');
+  _retainedCacheResults.push(buf);
+  if (_retainedCacheResults.length > RETAINED_CACHE_RESULTS) {
+    _retainedCacheResults.shift();
+  }
+  return buf;
+}
+
 /**
  * Distributed TLS session cache backend for sharing sessions across instances.
  *
@@ -4128,7 +4150,7 @@ class SessionCacheBackend {
           console.warn('SessionCacheBackend: Detected async callback in sync mode. Use async: true option.');
           return null;
         }
-        return result || null;
+        return retainCacheResult(result);
       } catch (e) {
         return null;
       }
@@ -4173,7 +4195,7 @@ class SessionCacheBackend {
           console.warn('SessionCacheBackend: Detected async callback in sync mode. Use async: true option.');
           return null;
         }
-        return result || null;
+        return retainCacheResult(result);
       } catch (e) {
         return null;
       }
