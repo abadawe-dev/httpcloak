@@ -398,7 +398,7 @@ foreach (var preset in presets)
 }
 // chrome-latest, chrome-155, chrome-155-windows, chrome-155-android, chrome-154,
 // ..., chrome-155-ios, firefox-148, safari-18, ...
-// Desktop and Android Chrome go up to 155; iOS Chrome has 143 to 152 and 155.
+// Desktop and Android Chrome go up to 155 (Android has no 149); iOS Chrome has 143 to 148, 150 to 152, and 155.
 ```
 
 ## Error Handling

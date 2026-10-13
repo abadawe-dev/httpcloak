@@ -143,6 +143,7 @@ Console.WriteLine(resp.StatusCode);
 - **Python**: `pip install httpcloak`
 - **Node.js**: `npm install httpcloak`
 - **.NET**: `dotnet add package HttpCloak`
+- **Android (Kotlin)**: build from source, see [Android](/bindings/android)
 
 ## Where to next
 
