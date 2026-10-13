@@ -198,12 +198,18 @@ func TestNoPrefacePingBelowThreshold(t *testing.T) {
 	}
 }
 
-// No ping on the first request of a fresh connection, at any threshold. The
-// zero value of the read clock is the Unix epoch, so a connection that forgets
-// to seed it reads as idle by decades and pings on request one, which is
-// louder than the silence it replaces.
+// No ping on the first request of a fresh connection. A browser starts its
+// read clock when the session starts, so request one never looks idle; a
+// connection that read it as the Unix epoch, or pinged without checking it,
+// would ping on every fresh connection.
+//
+// The threshold has to be longer than the gap between the server's SETTINGS
+// and the first request. That gap counts as idle time, exactly as Chrome
+// counts it from last_read_time_, so at the 1ms this test used to run with, a
+// loaded machine pinged on request one quite correctly and the test failed
+// about one run in ten.
 func TestNoPrefacePingOnFreshConnection(t *testing.T) {
-	name := pingPreset(t, "ping-fresh", 1, 5000) // 1ms: as eager as it gets
+	name := pingPreset(t, "ping-fresh", 2000, 5000)
 	s := startH2Server(t, h2Config{})
 	tr := pingTransport(t, name)
 

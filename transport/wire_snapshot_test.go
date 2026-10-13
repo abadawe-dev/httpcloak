@@ -828,12 +828,18 @@ func captureH2(t *testing.T, name string, cert tls.Certificate) string {
 // wireRequests is the request sequence every protocol runs: two GETs and a
 // JSON POST on one transport, so connection reuse and the dynamic tables are
 // part of what is recorded.
+// wireRequestCount is how many requests wireRequests sends.
+const wireRequestCount = 3
+
 func wireRequests(t *testing.T, tr *Transport, base string) {
 	reqs := []*Request{
 		{Method: "GET", URL: base + "/a"},
 		{Method: "GET", URL: base + "/b?q=1"},
 		{Method: "POST", URL: base + "/c", Body: []byte(`{"k":1}`),
 			Headers: map[string][]string{"Content-Type": {"application/json"}}},
+	}
+	if len(reqs) != wireRequestCount {
+		t.Fatalf("wireRequests sends %d requests but wireRequestCount says %d", len(reqs), wireRequestCount)
 	}
 	for _, r := range reqs {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -1266,7 +1272,27 @@ func captureH3(t *testing.T, name string, cert tls.Certificate) string {
 	tr := wireTransport(name, ProtocolHTTP3)
 	defer tr.Close()
 	wireRequests(t, tr, "https://"+ln.Addr().String())
-	time.Sleep(100 * time.Millisecond)
+
+	// Control-stream frames travel on their own stream, so a PRIORITY_UPDATE
+	// can arrive after the response to its request has gone back. A fixed
+	// 100ms sleep lost that race under -race now and then, and the snapshot
+	// came out missing control lines. Wait for every request stream, then for
+	// the control stream to go quiet.
+	settled := func() (int, int) {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(requests), len(control)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for lastControl, quietSince := -1, time.Now(); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		nreq, nctl := settled()
+		if nctl != lastControl {
+			lastControl, quietSince = nctl, time.Now()
+		}
+		if nreq >= wireRequestCount && time.Since(quietSince) >= 250*time.Millisecond {
+			break
+		}
+	}
 
 	mu.Lock()
 	defer mu.Unlock()
