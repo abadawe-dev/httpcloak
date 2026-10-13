@@ -105,13 +105,17 @@ public sealed class SessionCacheBackend : IDisposable
     private readonly Native.EchCachePutCallback _echPutCb;
     private readonly Native.SessionCacheErrorCallback _errorCb;
 
-    // Trailing native buffer for the last Get / GetEch result. The Go side
-    // documents that it copies the C string immediately via C.GoString and
-    // does NOT free; the wrapper owns the buffer lifetime. Freeing on the
-    // next callback invocation is safe because the previous invocation's
-    // copy has already been consumed by Go.
-    private IntPtr _lastGetPtr;
-    private IntPtr _lastEchGetPtr;
+    // Native buffers for recent Get / GetEch results. The native side copies
+    // the returned string right after the thunk returns and never frees it,
+    // so the wrapper owns the buffer. One slot freed by the next call is not
+    // enough: a single backend serves every session, and a Get on another
+    // thread could free the buffer before this caller's copy is taken. The
+    // last RetainedBuffers results stay alive instead and the oldest is
+    // freed as each new one arrives, the same bounded ring the Python
+    // binding keeps.
+    private const int RetainedBuffers = 128;
+    private readonly IntPtr[] _retained = new IntPtr[RetainedBuffers];
+    private int _retainedNext;
     private readonly object _ptrLock = new();
 
     // Single-process registration guard.
@@ -177,7 +181,6 @@ public sealed class SessionCacheBackend : IDisposable
             _activeBackend = null;
         }
         _registered = false;
-        FreeLastBuffers();
     }
 
     /// <summary>
@@ -212,17 +215,34 @@ public sealed class SessionCacheBackend : IDisposable
     {
         lock (_ptrLock)
         {
-            if (_lastGetPtr != IntPtr.Zero)
+            for (int i = 0; i < _retained.Length; i++)
             {
-                Marshal.FreeHGlobal(_lastGetPtr);
-                _lastGetPtr = IntPtr.Zero;
-            }
-            if (_lastEchGetPtr != IntPtr.Zero)
-            {
-                Marshal.FreeHGlobal(_lastEchGetPtr);
-                _lastEchGetPtr = IntPtr.Zero;
+                if (_retained[i] != IntPtr.Zero)
+                {
+                    Marshal.FreeCoTaskMem(_retained[i]);
+                    _retained[i] = IntPtr.Zero;
+                }
             }
         }
+    }
+
+    // Copies value into a native UTF-8 buffer that stays alive until
+    // RetainedBuffers more results have been handed out. CoTaskMem has to be
+    // released with FreeCoTaskMem; on Windows FreeHGlobal is a different heap.
+    private IntPtr Retain(string value)
+    {
+        IntPtr ptr = Marshal.StringToCoTaskMemUTF8(value);
+        lock (_ptrLock)
+        {
+            IntPtr oldest = _retained[_retainedNext];
+            if (oldest != IntPtr.Zero)
+            {
+                Marshal.FreeCoTaskMem(oldest);
+            }
+            _retained[_retainedNext] = ptr;
+            _retainedNext = (_retainedNext + 1) % RetainedBuffers;
+        }
+        return ptr;
     }
 
     // -------------------------------------------------------------------
@@ -239,15 +259,7 @@ public sealed class SessionCacheBackend : IDisposable
             string key = Marshal.PtrToStringUTF8(keyPtr) ?? string.Empty;
             string? value = _impl.Get(key);
             if (value == null) return IntPtr.Zero;
-            lock (_ptrLock)
-            {
-                if (_lastGetPtr != IntPtr.Zero)
-                {
-                    Marshal.FreeHGlobal(_lastGetPtr);
-                }
-                _lastGetPtr = Marshal.StringToCoTaskMemUTF8(value);
-                return _lastGetPtr;
-            }
+            return Retain(value);
         }
         catch
         {
@@ -289,15 +301,7 @@ public sealed class SessionCacheBackend : IDisposable
             string key = Marshal.PtrToStringUTF8(keyPtr) ?? string.Empty;
             string? value = _impl.GetEch(key);
             if (value == null) return IntPtr.Zero;
-            lock (_ptrLock)
-            {
-                if (_lastEchGetPtr != IntPtr.Zero)
-                {
-                    Marshal.FreeHGlobal(_lastEchGetPtr);
-                }
-                _lastEchGetPtr = Marshal.StringToCoTaskMemUTF8(value);
-                return _lastEchGetPtr;
-            }
+            return Retain(value);
         }
         catch
         {

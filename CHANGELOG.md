@@ -97,6 +97,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The Node.js session cache no longer crashes under concurrent requests**: with a cache configured through `configureSessionCache`, a few async requests opening connections at the same time could crash the process or hand a lookup another key's value. A `get` or ECH `get` callback's string was converted into memory that was released before the library copied it, which is harmless one lookup at a time and not otherwise. Measured, 16 sessions at a time crashed within a few rounds every run. Results are now handed back in a buffer the binding keeps alive, and the same load runs clean in both the sync and the async callback modes.
 
+- **The .NET session cache frees its results safely**: a `Get` or `GetEch` result was copied into native memory with one allocator and freed with another, which on Windows are different heaps. And only the latest result was kept, freed by the next lookup, so with several sessions looking up at once one lookup could free another's result before the library had copied it. Results are now freed with the allocator that made them, and the last 128 stay alive, as the Python and Node.js bindings do.
+
 ## [1.7.2] - 2026-09-03
 
 Worth taking if you use HTTP/3 with a custom fingerprint. A preset built from a
