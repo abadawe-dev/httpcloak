@@ -222,7 +222,7 @@ export class StreamResponse {
 }
 
 export interface SessionOptions {
-  /** Browser preset to use (default: "chrome-146") */
+  /** Browser preset to use (default: "chrome-latest") */
   preset?: string;
   /** Proxy URL (e.g., "http://user:pass@host:port" or "socks5://host:port") */
   proxy?: string;
@@ -943,7 +943,7 @@ export class Session {
 export interface LocalProxyOptions {
   /** Port to listen on (default: 0 for auto-assign) */
   port?: number;
-  /** Browser preset to use (default: "chrome-146") */
+  /** Browser preset to use (default: "chrome-latest") */
   preset?: string;
   /** Request timeout in seconds (default: 30) */
   timeout?: number;

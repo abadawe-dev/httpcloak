@@ -1072,7 +1072,7 @@ func httpcloak_request_raw(handle C.int64_t, requestJSON *C.char, body *C.char, 
 func httpcloak_session_new(configJSON *C.char) (hcRet C.int64_t) {
 	defer guardInt64("httpcloak_session_new", &hcRet)
 	config := SessionConfig{
-		Preset:      "chrome-146",
+		Preset:      "chrome-latest",
 		Timeout:     30,
 		HTTPVersion: "auto",
 	}
@@ -3323,7 +3323,7 @@ func httpcloak_local_proxy_start(configJSON *C.char) (hcRet C.int64_t) {
 	defer guardInt64("httpcloak_local_proxy_start", &hcRet)
 	config := LocalProxyConfig{
 		Port:           0,
-		Preset:         "chrome-146",
+		Preset:         "chrome-latest",
 		Timeout:        30,
 		MaxConnections: 1000,
 	}

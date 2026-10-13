@@ -104,7 +104,7 @@ type LocalProxyConfig struct {
 	// Port to listen on (0 = auto-select)
 	Port int
 
-	// Browser fingerprint preset (default: chrome-146)
+	// Browser fingerprint preset (default: chrome-latest)
 	Preset string
 
 	// Request timeout
@@ -193,7 +193,7 @@ func WithProxySessionCache(backend transport.SessionCacheBackend, errorCallback 
 func StartLocalProxy(port int, opts ...LocalProxyOption) (*LocalProxy, error) {
 	config := &LocalProxyConfig{
 		Port:           port,
-		Preset:         "chrome-146",
+		Preset:         "chrome-latest",
 		Timeout:        30 * time.Second,
 		MaxConnections: 1000,
 	}

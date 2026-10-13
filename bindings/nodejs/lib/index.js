@@ -1624,7 +1624,7 @@ class Session {
   /**
    * Create a new session
    * @param {Object} options - Session options
-   * @param {string} [options.preset="chrome-146"] - Browser preset to use
+   * @param {string} [options.preset="chrome-latest"] - Browser preset to use
    * @param {string} [options.proxy] - Proxy URL (e.g., "http://user:pass@host:port" or "socks5://host:port")
    * @param {string} [options.tcpProxy] - Proxy URL for TCP protocols (HTTP/1.1, HTTP/2) - use with udpProxy for split config
    * @param {string} [options.udpProxy] - Proxy URL for UDP protocols (HTTP/3 via MASQUE) - use with tcpProxy for split config
@@ -1645,7 +1645,7 @@ class Session {
    */
   constructor(options = {}) {
     const {
-      preset = "chrome-146",
+      preset = "chrome-latest",
       proxy = null,
       tcpProxy = null,
       udpProxy = null,
@@ -3654,7 +3654,7 @@ let _defaultConfig = {};
  * Takes every option a Session takes, plus default headers and auth, and
  * replaces the default session with one built from them.
  * @param {Object} options - Configuration options
- * @param {string} [options.preset="chrome-146"] - Browser preset
+ * @param {string} [options.preset="chrome-latest"] - Browser preset
  * @param {Object} [options.headers] - Default headers
  * @param {Array} [options.auth] - Default basic auth [username, password]
  * @param {string} [options.proxy] - Proxy URL
@@ -3805,7 +3805,7 @@ class LocalProxy {
    * Create and start a local HTTP proxy server.
    * @param {Object} options - Proxy configuration options
    * @param {number} [options.port=0] - Port to listen on (0 = auto-select)
-   * @param {string} [options.preset="chrome-146"] - Browser fingerprint preset
+   * @param {string} [options.preset="chrome-latest"] - Browser fingerprint preset
    * @param {number} [options.timeout=30] - Request timeout in seconds
    * @param {number} [options.maxConnections=1000] - Maximum concurrent connections
    * @param {string} [options.tcpProxy] - Default upstream TCP proxy URL
@@ -3815,7 +3815,7 @@ class LocalProxy {
   constructor(options = {}) {
     const {
       port = 0,
-      preset = "chrome-146",
+      preset = "chrome-latest",
       timeout = 30,
       maxConnections = 1000,
       tcpProxy = null,

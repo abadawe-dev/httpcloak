@@ -2136,7 +2136,7 @@ func (s *Session) Marshal() ([]byte, error) {
 	config := s.Config
 	if config == nil {
 		config = &protocol.SessionConfig{
-			Preset: "chrome-146",
+			Preset: "chrome-latest",
 		}
 	}
 
@@ -2328,7 +2328,7 @@ func UnmarshalSessionWithOptions(data []byte, opts *SessionLoadOptions) (*Sessio
 	config := state.Config
 	if config == nil {
 		config = &protocol.SessionConfig{
-			Preset: "chrome-146",
+			Preset: "chrome-latest",
 		}
 	}
 	opts.applyTo(config)
@@ -2364,7 +2364,7 @@ func unmarshalSessionV4(data []byte, opts *SessionLoadOptions) (*Session, error)
 	config := state.Config
 	if config == nil {
 		config = &protocol.SessionConfig{
-			Preset: "chrome-146",
+			Preset: "chrome-latest",
 		}
 	}
 	opts.applyTo(config)

@@ -37,7 +37,7 @@ Constructor signature (named arguments are the way):
 
 ```csharp
 public Session(
-    string preset = "chrome-146",
+    string preset = "chrome-latest",
     string? proxy = null,
     string? tcpProxy = null,
     string? udpProxy = null,
@@ -362,7 +362,7 @@ Constructor signatures:
 
 ```csharp
 new HttpCloakHandler(
-    string preset = "chrome-146",
+    string preset = "chrome-latest",
     string? proxy = null,
     string? tcpProxy = null,
     string? udpProxy = null,

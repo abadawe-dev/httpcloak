@@ -1794,7 +1794,7 @@ class Session:
     API is compatible with requests.Session.
 
     Args:
-        preset: Browser preset (default: "chrome-146")
+        preset: Browser preset (default: "chrome-latest")
         proxy: Proxy URL (e.g., "http://user:pass@host:port" or "socks5://host:port")
         tcp_proxy: Proxy URL for TCP protocols (HTTP/1.1, HTTP/2) - use with udp_proxy for split config
         udp_proxy: Proxy URL for UDP protocols (HTTP/3 via MASQUE) - use with tcp_proxy for split config
@@ -1853,7 +1853,7 @@ class Session:
 
     def __init__(
         self,
-        preset: str = "chrome-146",
+        preset: str = "chrome-latest",
         proxy: Optional[str] = None,
         tcp_proxy: Optional[str] = None,
         udp_proxy: Optional[str] = None,
@@ -4507,7 +4507,7 @@ _default_config: Dict[str, Any] = {}
 
 
 def configure(
-    preset: str = "chrome-146",
+    preset: str = "chrome-latest",
     headers: Optional[Dict[str, str]] = None,
     auth: Optional[Tuple[str, str]] = None,
     proxy: Optional[str] = None,
@@ -4530,7 +4530,7 @@ def configure(
     so on) can be passed as well and goes straight to the session.
 
     Args:
-        preset: Browser preset (default: "chrome-146")
+        preset: Browser preset (default: "chrome-latest")
         headers: Default headers for all requests
         auth: Default basic auth tuple (username, password)
         proxy: Proxy URL (e.g., "http://user:pass@host:port")
@@ -4838,7 +4838,7 @@ class LocalProxy:
     def __init__(
         self,
         port: int = 0,
-        preset: str = "chrome-146",
+        preset: str = "chrome-latest",
         timeout: int = 30,
         max_connections: int = 1000,
         tcp_proxy: Optional[str] = None,
@@ -4850,7 +4850,7 @@ class LocalProxy:
 
         Args:
             port: Port to listen on (0 = auto-select available port)
-            preset: Browser fingerprint preset (default: "chrome-146")
+            preset: Browser fingerprint preset (default: "chrome-latest")
             timeout: Request timeout in seconds (default: 30)
             max_connections: Maximum concurrent connections (default: 1000)
             tcp_proxy: Default upstream TCP proxy URL (can be overridden per-request)

@@ -825,7 +825,7 @@ httpcloak.options(url, **kwargs)
 
 # Session class
 session = httpcloak.Session(
-    preset="chrome-latest",       # Browser preset (omit it and you get chrome-146)
+    preset="chrome-latest",       # Browser preset (chrome-latest is also the default)
     proxy="socks5://...",      # Proxy URL
     timeout=30,                # Timeout in seconds
     http_version="h3",         # Force protocol: h1, h2, h3, auto

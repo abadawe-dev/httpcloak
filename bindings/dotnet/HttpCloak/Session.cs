@@ -201,7 +201,7 @@ public sealed class Session : IDisposable
     /// <summary>
     /// Create a new session with the specified options.
     /// </summary>
-    /// <param name="preset">Browser preset (default: "chrome-146")</param>
+    /// <param name="preset">Browser preset (default: "chrome-latest")</param>
     /// <param name="proxy">Proxy URL (e.g., "http://user:pass@host:port" or "socks5://host:port")</param>
     /// <param name="tcpProxy">Proxy URL for TCP protocols (HTTP/1.1, HTTP/2) - use with udpProxy for split config</param>
     /// <param name="udpProxy">Proxy URL for UDP protocols (HTTP/3 via MASQUE) - use with tcpProxy for split config</param>
@@ -233,7 +233,7 @@ public sealed class Session : IDisposable
     /// <param name="tcpWindowScale">TCP Window Scale override: 8=Windows, 7=Linux, 6=macOS (default: null)</param>
     /// <param name="tcpDf">IP Don't Fragment bit override (default: null)</param>
     public Session(
-        string preset = "chrome-146",
+        string preset = "chrome-latest",
         string? proxy = null,
         string? tcpProxy = null,
         string? udpProxy = null,
@@ -3775,7 +3775,7 @@ public class MultipartFile
 internal class SessionConfig
 {
     [JsonPropertyName("preset")]
-    public string Preset { get; set; } = "chrome-146";
+    public string Preset { get; set; } = "chrome-latest";
 
     [JsonPropertyName("proxy")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -4292,14 +4292,14 @@ public sealed class HttpCloakHandler : DelegatingHandler
     /// Create a new HttpCloakHandler with the specified options.
     /// Uses LocalProxy internally for true streaming support.
     /// </summary>
-    /// <param name="preset">Browser preset (default: "chrome-146")</param>
+    /// <param name="preset">Browser preset (default: "chrome-latest")</param>
     /// <param name="proxy">Upstream proxy URL (e.g., "http://user:pass@host:port" or "socks5://host:port")</param>
     /// <param name="tcpProxy">Upstream proxy URL for TCP protocols (HTTP/1.1, HTTP/2)</param>
     /// <param name="udpProxy">Upstream proxy URL for UDP protocols (HTTP/3 via MASQUE)</param>
     /// <param name="timeout">Request timeout in seconds (default: 30)</param>
     /// <param name="maxConnections">Maximum concurrent connections (default: 1000)</param>
     public HttpCloakHandler(
-        string preset = "chrome-146",
+        string preset = "chrome-latest",
         string? proxy = null,
         string? tcpProxy = null,
         string? udpProxy = null,
