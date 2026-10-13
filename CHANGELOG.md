@@ -137,7 +137,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Dependencies
 
-- sardanioss/net v1.2.10 → v1.2.11
+- sardanioss/net v1.2.10 → v1.2.12
+- sardanioss/quic-go v1.2.29 → v1.2.30
 
 ## [1.7.2] - 2026-09-03
 
