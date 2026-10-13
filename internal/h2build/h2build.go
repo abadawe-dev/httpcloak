@@ -45,9 +45,9 @@ type Options struct {
 	// Preset is the profile being impersonated. Required.
 	Preset *fingerprint.Preset
 
-	// TLSOnly disables the automatic Accept-Encoding and suppresses the
-	// preset's User-Agent, for callers that want to supply every header
-	// themselves.
+	// TLSOnly suppresses the preset's User-Agent, for callers that want to
+	// supply every header themselves. (The automatic Accept-Encoding it used
+	// to disable is now off for every transport.)
 	TLSOnly bool
 
 	// PseudoHeaderOrder overrides the preset's pseudo-header order. Used by
@@ -71,9 +71,15 @@ func Transport(o Options) *http2.Transport {
 		pseudoOrder = PseudoHeaderOrder(p)
 	}
 
+	// DisableCompression: never add "accept-encoding: gzip" on the caller's
+	// behalf. Every preset carries its own Accept-Encoding, so this only ever
+	// fired for a request without one: ExactHeaders, a custom order that leaves
+	// it out, or TLS-only passthrough. Each of those promises the headers go
+	// out as given, and a browser never adds one either. Bodies are decoded
+	// from Content-Encoding by the transport, not here.
 	return &http2.Transport{
 		AllowHTTP:                  false,
-		DisableCompression:         o.TLSOnly,
+		DisableCompression:         true,
 		StrictMaxConcurrentStreams: false,
 		MaxHeaderListSize:          s.MaxHeaderListSize,
 		MaxReadFrameSize:           s.MaxFrameSize,

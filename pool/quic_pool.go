@@ -616,6 +616,9 @@ func (p *QUICHostPool) createConn(ctx context.Context) (*QUICConn, error) {
 		AdditionalSettings:     additionalSettings,
 		MaxResponseHeaderBytes: int(p.preset.H3MaxResponseHeaderBytes()),
 		SendGreaseFrames:       p.preset.H3SendGreaseFrames(),
+		// Never add "accept-encoding: gzip" on the caller's behalf; see the
+		// same setting in internal/h2build.
+		DisableCompression: true,
 		Dial: func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
 			// Combine all IPs, preferred first
 			allIPs := append(preferredIPs, fallbackIPs...)
