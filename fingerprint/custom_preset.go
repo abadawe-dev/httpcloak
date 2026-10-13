@@ -1415,6 +1415,32 @@ func validatePreset(p *Preset, spec *PresetSpec) error {
 		if spec.TLS.JA3ExtrasSpec != nil && spec.TLS.JA3 == "" {
 			return fmt.Errorf("ja3_extras requires ja3 to be set")
 		}
+		// With ja3_extras present, the top-level fields it would otherwise be
+		// built from are not read at all, so declaring both lost the top-level
+		// ones without a word, the same failure as #130 below.
+		if spec.TLS.JA3ExtrasSpec != nil && spec.TLS.JA3 != "" {
+			var ignored []string
+			for _, f := range []struct {
+				name string
+				set  bool
+			}{
+				{"signature_algorithms", len(spec.TLS.SignatureAlgorithms) > 0},
+				{"delegated_credential_algorithms", len(spec.TLS.DelegatedCredentialAlgorithms) > 0},
+				{"alpn", len(spec.TLS.ALPN) > 0},
+				{"cert_compression", len(spec.TLS.CertCompression) > 0},
+				{"permute_extensions", spec.TLS.PermuteExtensions != nil},
+				{"record_size_limit", spec.TLS.RecordSizeLimit != nil},
+				{"key_share_curves", spec.TLS.KeyShareCurves != nil},
+			} {
+				if f.set {
+					ignored = append(ignored, f.name)
+				}
+			}
+			if len(ignored) > 0 {
+				return fmt.Errorf("tls.%s would be ignored because ja3_extras is set; "+
+					"put them inside ja3_extras instead", strings.Join(ignored, ", tls."))
+			}
+		}
 		// TLS extension fields only apply in ja3 mode, with one exception.
 		//
 		// signature_algorithms is NOT one of them. applyTLS honours it on the
