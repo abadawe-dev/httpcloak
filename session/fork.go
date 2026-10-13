@@ -94,7 +94,9 @@ func (s *Session) forkOne() *Session {
 	} else if cfgCopy.ForceHTTP3 {
 		t.SetProtocol(transport.ProtocolHTTP3)
 	} else if cfgCopy.DisableHTTP3 {
-		t.SetProtocol(transport.ProtocolHTTP2)
+		// Auto mode without HTTP/3, not forced HTTP/2: forcing HTTP/2 lost
+		// the fallback to HTTP/1.1 for servers that only offer that (#121).
+		t.SetDisableHTTP3(true)
 	}
 
 	if cfgCopy.PreferIPv4 {

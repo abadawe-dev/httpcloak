@@ -103,7 +103,8 @@ type ClientConfig struct {
 	// Default: false.
 	DisableKeepAlives bool
 
-	// DisableH3 disables HTTP/3 (QUIC) and forces HTTP/2.
+	// DisableH3 disables HTTP/3 (QUIC). Auto mode keeps HTTP/2 and the
+	// fallback to HTTP/1.1; use ForceProtocol to pin HTTP/2.
 	// Useful if HTTP/3 causes issues with certain servers.
 	// Default: false.
 	DisableH3 bool

@@ -56,6 +56,7 @@ internal_tests/
 !/trust_anchors_wire_test.go
 !/deflate_wire_test.go
 !/zstd_stream_close_test.go
+!/disable_h3_test.go
 
 # Python regression locks. The repo tracked no Python tests until the fast-path
 # JSON body bug (post_fast/put_fast crashed outright on json= with no headers)

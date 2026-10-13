@@ -600,6 +600,10 @@ type Transport struct {
 	proxy       *ProxyConfig
 	config      *TransportConfig
 
+	// disableH3 keeps auto mode but takes HTTP/3 out of it; see
+	// SetDisableHTTP3. Guarded by fieldsMu.
+	disableH3 bool
+
 	// fieldsMu guards the mutable fields that SetProxy/SetPreset/SetProtocol
 	// reassign while Do/doAuto/DoStream (and the Get*Transport getters) read
 	// them: h1Transport, h2Transport, h3Transport, preset, protocol, proxy,
@@ -878,6 +882,16 @@ func NewTransportWithConfig(presetName string, proxy *ProxyConfig, config *Trans
 func (t *Transport) SetProtocol(p Protocol) {
 	t.fieldsMu.Lock()
 	t.protocol = p
+	t.fieldsMu.Unlock()
+}
+
+// SetDisableHTTP3 takes HTTP/3 out of auto mode and leaves everything else in
+// it: HTTP/2 with the fallback to HTTP/1.1 when the server's ALPN offers only
+// that. It is not the same as forcing HTTP/2, which surfaces the ALPN mismatch
+// instead (issue #121). Forcing HTTP/3 explicitly still wins over it.
+func (t *Transport) SetDisableHTTP3(disable bool) {
+	t.fieldsMu.Lock()
+	t.disableH3 = disable
 	t.fieldsMu.Unlock()
 }
 
@@ -1359,10 +1373,16 @@ type transportSnapshot struct {
 func (t *Transport) snapshot() transportSnapshot {
 	t.fieldsMu.RLock()
 	defer t.fieldsMu.RUnlock()
+	h3 := t.h3Transport
+	if t.disableH3 && t.protocol != ProtocolHTTP3 {
+		// Every HTTP/3 path in auto mode is gated on snap.h3, so a nil here
+		// removes HTTP/3 from the race and from the cached-protocol path.
+		h3 = nil
+	}
 	return transportSnapshot{
 		h1:            t.h1Transport,
 		h2:            t.h2Transport,
-		h3:            t.h3Transport,
+		h3:            h3,
 		proxy:         t.proxy,
 		preset:        t.preset,
 		protocol:      t.protocol,
