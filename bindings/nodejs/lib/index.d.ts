@@ -1182,24 +1182,56 @@ export function request(method: string, url: string, options?: RequestOptions): 
 
 /** Available browser presets */
 export const Preset: {
+  // Chrome latest (auto-resolves to newest shipped Chrome)
   CHROME_LATEST: string;
   CHROME_LATEST_WINDOWS: string;
   CHROME_LATEST_LINUX: string;
   CHROME_LATEST_MACOS: string;
   CHROME_LATEST_IOS: string;
   CHROME_LATEST_ANDROID: string;
+
+  // Chrome 153 (headers-only over 152; no iOS preset until one is captured)
+  CHROME_153: string;
+  CHROME_153_WINDOWS: string;
+  CHROME_153_LINUX: string;
+  CHROME_153_MACOS: string;
+  CHROME_153_ANDROID: string;
+  // Chrome 154 (headers-only over 153)
+  CHROME_154: string;
+  CHROME_154_WINDOWS: string;
+  CHROME_154_LINUX: string;
+  CHROME_154_MACOS: string;
+  CHROME_154_ANDROID: string;
+  // Chrome 155 (adds image/jxl to Accept; TLS unchanged)
+  CHROME_155: string;
+  CHROME_155_WINDOWS: string;
+  CHROME_155_LINUX: string;
+  CHROME_155_MACOS: string;
+  CHROME_155_ANDROID: string;
+
+  // Chrome 152 (trust anchors, plus a greased signature algorithm on TCP)
+  CHROME_152: string;
+  CHROME_152_WINDOWS: string;
+  CHROME_152_LINUX: string;
+  CHROME_152_MACOS: string;
+  CHROME_152_ANDROID: string;
+  CHROME_152_IOS: string;
+
+  // Chrome 151 (headers only over 150)
   CHROME_151: string;
   CHROME_151_WINDOWS: string;
   CHROME_151_LINUX: string;
   CHROME_151_MACOS: string;
   CHROME_151_ANDROID: string;
   CHROME_151_IOS: string;
+
   CHROME_150: string;
   CHROME_150_WINDOWS: string;
   CHROME_150_LINUX: string;
   CHROME_150_MACOS: string;
   CHROME_150_ANDROID: string;
   CHROME_150_IOS: string;
+
   FIREFOX_148_WINDOWS: string;
   FIREFOX_148_LINUX: string;
   FIREFOX_148_MACOS: string;
@@ -1209,63 +1241,95 @@ export const Preset: {
   FIREFOX_LATEST_WINDOWS: string;
   FIREFOX_LATEST_LINUX: string;
   FIREFOX_LATEST_MACOS: string;
+
   CHROME_149: string;
   CHROME_149_WINDOWS: string;
   CHROME_149_LINUX: string;
   CHROME_149_MACOS: string;
+
+  // Chrome 148
   CHROME_148: string;
   CHROME_148_WINDOWS: string;
   CHROME_148_LINUX: string;
   CHROME_148_MACOS: string;
   CHROME_148_IOS: string;
   CHROME_148_ANDROID: string;
+
+  // Chrome 147
   CHROME_147: string;
   CHROME_147_WINDOWS: string;
   CHROME_147_LINUX: string;
   CHROME_147_MACOS: string;
   CHROME_147_IOS: string;
   CHROME_147_ANDROID: string;
+
+  // Chrome 146
   CHROME_146: string;
   CHROME_146_WINDOWS: string;
   CHROME_146_LINUX: string;
   CHROME_146_MACOS: string;
+  CHROME_146_IOS: string;
+  CHROME_146_ANDROID: string;
+
+  // Chrome 145
   CHROME_145: string;
   CHROME_145_WINDOWS: string;
   CHROME_145_LINUX: string;
   CHROME_145_MACOS: string;
+  CHROME_145_IOS: string;
+  CHROME_145_ANDROID: string;
+
+  // Chrome 144
   CHROME_144: string;
   CHROME_144_WINDOWS: string;
   CHROME_144_LINUX: string;
   CHROME_144_MACOS: string;
+  CHROME_144_IOS: string;
+  CHROME_144_ANDROID: string;
+
+  // Chrome 143
   CHROME_143: string;
   CHROME_143_WINDOWS: string;
   CHROME_143_LINUX: string;
   CHROME_143_MACOS: string;
+  CHROME_143_IOS: string;
+  CHROME_143_ANDROID: string;
+
+  // Older Chrome (H1/H2 only, no H3)
   CHROME_141: string;
   CHROME_133: string;
-  CHROME_143_IOS: string;
-  CHROME_144_IOS: string;
-  CHROME_145_IOS: string;
-  CHROME_146_IOS: string;
-  CHROME_143_ANDROID: string;
-  CHROME_144_ANDROID: string;
-  CHROME_145_ANDROID: string;
-  CHROME_146_ANDROID: string;
+
+  // Firefox
+  FIREFOX_LATEST: string;
+  FIREFOX_148: string;
   FIREFOX_133: string;
+
+  // Safari (desktop and mobile)
+  SAFARI_LATEST: string;
   SAFARI_18: string;
   SAFARI_17_IOS: string;
   SAFARI_18_IOS: string;
-  // Backwards compatibility aliases
+  SAFARI_LATEST_IOS: string;
+
+  // Backwards compatibility aliases (old "ios-chrome" / "android-chrome" naming)
   IOS_CHROME_143: string;
   IOS_CHROME_144: string;
   IOS_CHROME_145: string;
   IOS_CHROME_146: string;
+  IOS_CHROME_147: string;
+  IOS_CHROME_148: string;
+  IOS_CHROME_LATEST: string;
   ANDROID_CHROME_143: string;
   ANDROID_CHROME_144: string;
   ANDROID_CHROME_145: string;
   ANDROID_CHROME_146: string;
+  ANDROID_CHROME_147: string;
+  ANDROID_CHROME_148: string;
+  ANDROID_CHROME_LATEST: string;
   IOS_SAFARI_17: string;
   IOS_SAFARI_18: string;
+  IOS_SAFARI_LATEST: string;
+
   all(): string[];
 };
 

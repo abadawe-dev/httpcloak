@@ -1,14 +1,14 @@
 # android-chrome-latest
 
 ## tcp client hello (auto)
-extensions (permuted) 10,11,13,16,17613,18,23,27,35,43,45,5,51,65037,65281,GREASE,GREASE
+extensions (permuted) 10,11,13,16,17613,18,23,27,35,43,45,5,51,51764,65037,65281,GREASE,GREASE
 legacy_version 0x0303
 session_id 32 bytes
 cipher_suites GREASE,4865,4866,4867,49195,49199,49196,49200,52393,52392,49171,49172,156,157,47,53
 compression 00
 ext 10: GREASE 4588 29 23 24
 ext 11: 0100
-ext 13: 1027 2052 1025 1283 2053 1281 2054 1537
+ext 13: GREASE 2308 2309 2310 1027 2052 1025 1283 2053 1281 2054 1537
 ext 16: 000c02683208687474702f312e31
 ext 17613: 0003026832
 ext 18: 
@@ -19,20 +19,21 @@ ext 43: GREASE 772 771
 ext 45: 0101
 ext 5: 0100000000
 ext 51: GREASE:1 4588:1216 29:32
+ext 51764: 00b80582df1302010582df1302060582df13020d0582df13020e0582df13020f0582df1302120582df1302130582df13021408839a648c9b2d010708839a648c9b2d010808839a648c9b2d010908839a648c9b2d010a08839a648c9b2d010b08839a648c9b2d010c08839a648c9b2d010d08839a648c9b2d011208839a648c9b2d011304d679090104d679090404d679090504d679090604d679090704d679090804d679090a04d679090b04d679090c04d679090d04d679090f
 ext 65037: type=0 kdf=1 enc=32 payload%16=0
 ext 65281: 00
 ext GREASE: 
 ext GREASE: 00
 
 ## tcp client hello (h2)
-extensions (permuted) 10,11,13,16,17613,18,23,27,35,43,45,5,51,65037,65281,GREASE,GREASE
+extensions (permuted) 10,11,13,16,17613,18,23,27,35,43,45,5,51,51764,65037,65281,GREASE,GREASE
 legacy_version 0x0303
 session_id 32 bytes
 cipher_suites GREASE,4865,4866,4867,49195,49199,49196,49200,52393,52392,49171,49172,156,157,47,53
 compression 00
 ext 10: GREASE 4588 29 23 24
 ext 11: 0100
-ext 13: 1027 2052 1025 1283 2053 1281 2054 1537
+ext 13: GREASE 2308 2309 2310 1027 2052 1025 1283 2053 1281 2054 1537
 ext 16: 000c02683208687474702f312e31
 ext 17613: 0003026832
 ext 18: 
@@ -43,20 +44,21 @@ ext 43: GREASE 772 771
 ext 45: 0101
 ext 5: 0100000000
 ext 51: GREASE:1 4588:1216 29:32
+ext 51764: 00b80582df1302010582df1302060582df13020d0582df13020e0582df13020f0582df1302120582df1302130582df13021408839a648c9b2d010708839a648c9b2d010808839a648c9b2d010908839a648c9b2d010a08839a648c9b2d010b08839a648c9b2d010c08839a648c9b2d010d08839a648c9b2d011208839a648c9b2d011304d679090104d679090404d679090504d679090604d679090704d679090804d679090a04d679090b04d679090c04d679090d04d679090f
 ext 65037: type=0 kdf=1 enc=32 payload%16=0
 ext 65281: 00
 ext GREASE: 
 ext GREASE: 00
 
 ## tcp client hello (h1)
-extensions (permuted) 10,11,13,16,18,23,27,35,43,45,5,51,65037,65281,GREASE,GREASE
+extensions (permuted) 10,11,13,16,18,23,27,35,43,45,5,51,51764,65037,65281,GREASE,GREASE
 legacy_version 0x0303
 session_id 32 bytes
 cipher_suites GREASE,4865,4866,4867,49195,49199,49196,49200,52393,52392,49171,49172,156,157,47,53
 compression 00
 ext 10: GREASE 4588 29 23 24
 ext 11: 0100
-ext 13: 1027 2052 1025 1283 2053 1281 2054 1537
+ext 13: GREASE 2308 2309 2310 1027 2052 1025 1283 2053 1281 2054 1537
 ext 16: 000908687474702f312e31
 ext 18: 
 ext 23: 
@@ -66,6 +68,7 @@ ext 43: GREASE 772 771
 ext 45: 0101
 ext 5: 0100000000
 ext 51: GREASE:1 4588:1216 29:32
+ext 51764: 00b80582df1302010582df1302060582df13020d0582df13020e0582df13020f0582df1302120582df1302130582df13021408839a648c9b2d010708839a648c9b2d010808839a648c9b2d010908839a648c9b2d010a08839a648c9b2d010b08839a648c9b2d010c08839a648c9b2d010d08839a648c9b2d011208839a648c9b2d011304d679090104d679090404d679090504d679090604d679090704d679090804d679090a04d679090b04d679090c04d679090d04d679090f
 ext 65037: type=0 kdf=1 enc=32 payload%16=0
 ext 65281: 00
 ext GREASE: 
@@ -80,12 +83,12 @@ HEADERS stream=1 flags=0x25 exclusive=true dep=0 weight=256
   incremental name=1 value-huffman=true                        :authority: 127.0.0.1:PORT
   indexed 7                                                    :scheme: https
   without-indexing name=4 value-huffman=false                  :path: /a
-  incremental name=literal huffman=true value-huffman=true     sec-ch-ua: "Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"
+  incremental name=literal huffman=true value-huffman=true     sec-ch-ua: "Google Chrome";v="155", "Chromium";v="155", "Not(A:Brand";v="24"
   incremental name=literal huffman=true value-huffman=false    sec-ch-ua-mobile: ?1
   incremental name=literal huffman=true value-huffman=true     sec-ch-ua-platform: "Android"
   incremental name=literal huffman=true value-huffman=false    upgrade-insecure-requests: 1
-  incremental name=58 value-huffman=true                       user-agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36
-  incremental name=19 value-huffman=true                       accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+  incremental name=58 value-huffman=true                       user-agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36
+  incremental name=19 value-huffman=true                       accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/jxl,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
   incremental name=literal huffman=true value-huffman=true     sec-fetch-site: none
   incremental name=literal huffman=true value-huffman=true     sec-fetch-mode: navigate
   incremental name=literal huffman=true value-huffman=false    sec-fetch-user: ?1
@@ -98,12 +101,12 @@ HEADERS stream=3 flags=0x25 exclusive=true dep=0 weight=256
   indexed 75                                                   :authority: 127.0.0.1:PORT
   indexed 7                                                    :scheme: https
   without-indexing name=4 value-huffman=true                   :path: /b?q=1
-  indexed 74                                                   sec-ch-ua: "Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"
+  indexed 74                                                   sec-ch-ua: "Google Chrome";v="155", "Chromium";v="155", "Not(A:Brand";v="24"
   indexed 73                                                   sec-ch-ua-mobile: ?1
   indexed 72                                                   sec-ch-ua-platform: "Android"
   indexed 71                                                   upgrade-insecure-requests: 1
-  indexed 70                                                   user-agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36
-  indexed 69                                                   accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+  indexed 70                                                   user-agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36
+  indexed 69                                                   accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/jxl,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
   indexed 68                                                   sec-fetch-site: none
   indexed 67                                                   sec-fetch-mode: navigate
   indexed 66                                                   sec-fetch-user: ?1
@@ -117,8 +120,8 @@ HEADERS stream=5 flags=0x24 exclusive=true dep=0 weight=220
   indexed 7                                                    :scheme: https
   without-indexing name=4 value-huffman=false                  :path: /c
   indexed 72                                                   sec-ch-ua-platform: "Android"
-  indexed 70                                                   user-agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36
-  indexed 74                                                   sec-ch-ua: "Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"
+  indexed 70                                                   user-agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36
+  indexed 74                                                   sec-ch-ua: "Google Chrome";v="155", "Chromium";v="155", "Not(A:Brand";v="24"
   indexed 73                                                   sec-ch-ua-mobile: ?1
   incremental name=31 value-huffman=true                       content-type: application/json
   incremental name=28 value-huffman=false                      content-length: 7
@@ -136,12 +139,12 @@ DATA stream=5 flags=0x1 len=7
 GET /a HTTP/1.1
 Host: 127.0.0.1:PORT
 Connection: keep-alive
-sec-ch-ua: "Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"
+sec-ch-ua: "Google Chrome";v="155", "Chromium";v="155", "Not(A:Brand";v="24"
 sec-ch-ua-mobile: ?1
 sec-ch-ua-platform: "Android"
 Upgrade-Insecure-Requests: 1
-User-Agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36
-Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+User-Agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/jxl,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
 Sec-Fetch-Site: none
 Sec-Fetch-Mode: navigate
 Sec-Fetch-User: ?1
@@ -152,12 +155,12 @@ Accept-Language: en-US,en;q=0.9
 GET /b?q=1 HTTP/1.1
 Host: 127.0.0.1:PORT
 Connection: keep-alive
-sec-ch-ua: "Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"
+sec-ch-ua: "Google Chrome";v="155", "Chromium";v="155", "Not(A:Brand";v="24"
 sec-ch-ua-mobile: ?1
 sec-ch-ua-platform: "Android"
 Upgrade-Insecure-Requests: 1
-User-Agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36
-Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+User-Agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/jxl,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
 Sec-Fetch-Site: none
 Sec-Fetch-Mode: navigate
 Sec-Fetch-User: ?1
@@ -169,8 +172,8 @@ POST /c HTTP/1.1
 Host: 127.0.0.1:PORT
 Connection: keep-alive
 sec-ch-ua-platform: "Android"
-User-Agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36
-sec-ch-ua: "Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"
+User-Agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36
+sec-ch-ua: "Google Chrome";v="155", "Chromium";v="155", "Not(A:Brand";v="24"
 sec-ch-ua-mobile: ?1
 Content-Type: application/json
 Content-Length: 7
@@ -185,7 +188,7 @@ body "{\"k\":1}"
 ## quic client hello
 first datagram size 1250
 initial: dcid 8 bytes, scid 0 bytes, token 0 bytes
-extensions (permuted) 10,13,16,17613,27,43,45,51,57,65037
+extensions (permuted) 10,13,16,17613,27,43,45,51,51764,57,65037
 legacy_version 0x0303
 session_id 0 bytes
 cipher_suites 4865,4866,4867
@@ -198,6 +201,7 @@ ext 27: 2
 ext 43: 772
 ext 45: 0101
 ext 51: 4588:1216 29:32
+ext 51764: 00b80582df1302010582df1302060582df13020d0582df13020e0582df13020f0582df1302120582df1302130582df13021408839a648c9b2d010708839a648c9b2d010808839a648c9b2d010908839a648c9b2d010a08839a648c9b2d010b08839a648c9b2d010c08839a648c9b2d010d08839a648c9b2d011208839a648c9b2d011304d679090104d679090404d679090504d679090604d679090704d679090804d679090a04d679090b04d679090c04d679090d04d679090f
 ext 57: (varies) 0x1=30000 0x20=65536 0x3128=4f524947 0x3=1472 0x4=15728640 0x5=6291456 0x6=6291456 0x7=6291456 0x8=100 0x9=103 0xf=cid(0) GREASE
 ext 65037: type=0 kdf=1 enc=32 payload%16=0
 
@@ -216,12 +220,12 @@ HEADERS
   literal name-ref static=true 0 never=false huffman=true "127.0.0.1:PORT"
   indexed static=true 23
   literal name-ref static=true 1 never=false huffman=true "/a"
-  literal name="sec-ch-ua" name-huffman=true never=false huffman=true "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\""
+  literal name="sec-ch-ua" name-huffman=true never=false huffman=true "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\""
   literal name="sec-ch-ua-mobile" name-huffman=true never=false huffman=true "?1"
   literal name="sec-ch-ua-platform" name-huffman=true never=false huffman=true "\"Android\""
   indexed static=true 94
-  literal name-ref static=true 95 never=false huffman=true "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36"
-  literal name-ref static=true 29 never=false huffman=true "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+  literal name-ref static=true 95 never=false huffman=true "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36"
+  literal name-ref static=true 29 never=false huffman=true "text/html,application/xhtml+xml,application/xml;q=0.9,image/jxl,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
   literal name="sec-fetch-site" name-huffman=true never=false huffman=true "none"
   literal name="sec-fetch-mode" name-huffman=true never=false huffman=true "navigate"
   literal name="sec-fetch-user" name-huffman=true never=false huffman=true "?1"
@@ -236,12 +240,12 @@ HEADERS
   literal name-ref static=true 0 never=false huffman=true "127.0.0.1:PORT"
   indexed static=true 23
   literal name-ref static=true 1 never=false huffman=true "/b?q=1"
-  literal name="sec-ch-ua" name-huffman=true never=false huffman=true "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\""
+  literal name="sec-ch-ua" name-huffman=true never=false huffman=true "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\""
   literal name="sec-ch-ua-mobile" name-huffman=true never=false huffman=true "?1"
   literal name="sec-ch-ua-platform" name-huffman=true never=false huffman=true "\"Android\""
   indexed static=true 94
-  literal name-ref static=true 95 never=false huffman=true "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36"
-  literal name-ref static=true 29 never=false huffman=true "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+  literal name-ref static=true 95 never=false huffman=true "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36"
+  literal name-ref static=true 29 never=false huffman=true "text/html,application/xhtml+xml,application/xml;q=0.9,image/jxl,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
   literal name="sec-fetch-site" name-huffman=true never=false huffman=true "none"
   literal name="sec-fetch-mode" name-huffman=true never=false huffman=true "navigate"
   literal name="sec-fetch-user" name-huffman=true never=false huffman=true "?1"
@@ -257,8 +261,8 @@ HEADERS
   indexed static=true 23
   literal name-ref static=true 1 never=false huffman=true "/c"
   literal name="sec-ch-ua-platform" name-huffman=true never=false huffman=true "\"Android\""
-  literal name-ref static=true 95 never=false huffman=true "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36"
-  literal name="sec-ch-ua" name-huffman=true never=false huffman=true "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\""
+  literal name-ref static=true 95 never=false huffman=true "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36"
+  literal name="sec-ch-ua" name-huffman=true never=false huffman=true "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\""
   literal name="sec-ch-ua-mobile" name-huffman=true never=false huffman=true "?1"
   indexed static=true 46
   indexed static=true 29
@@ -277,12 +281,56 @@ DATA len=7
 {
   "version": 1,
   "preset": {
-    "name": "chrome-148-android",
+    "name": "chrome-155-android",
     "tls": {
       "client_hello": "chrome-146-linux",
       "psk_client_hello": "chrome-146-linux-psk",
       "quic_client_hello": "chrome-146-quic",
-      "quic_psk_client_hello": "chrome-146-quic-psk"
+      "quic_psk_client_hello": "chrome-146-quic-psk",
+      "signature_algorithms": [
+        2570,
+        2308,
+        2309,
+        2310,
+        1027,
+        2052,
+        1025,
+        1283,
+        2053,
+        1281,
+        2054,
+        1537
+      ],
+      "trust_anchors": [
+        "82df130201",
+        "82df130206",
+        "82df13020d",
+        "82df13020e",
+        "82df13020f",
+        "82df130212",
+        "82df130213",
+        "82df130214",
+        "839a648c9b2d0107",
+        "839a648c9b2d0108",
+        "839a648c9b2d0109",
+        "839a648c9b2d010a",
+        "839a648c9b2d010b",
+        "839a648c9b2d010c",
+        "839a648c9b2d010d",
+        "839a648c9b2d0112",
+        "839a648c9b2d0113",
+        "d6790901",
+        "d6790904",
+        "d6790905",
+        "d6790906",
+        "d6790907",
+        "d6790908",
+        "d679090a",
+        "d679090b",
+        "d679090c",
+        "d679090d",
+        "d679090f"
+      ]
     },
     "http2": {
       "header_table_size": 65536,
@@ -465,7 +513,7 @@ DATA len=7
       "send_grease_frames": true
     },
     "headers": {
-      "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36",
+      "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36",
       "values": {
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
         "Accept-Encoding": "gzip, deflate, br, zstd",
@@ -476,14 +524,14 @@ DATA len=7
         "Sec-Fetch-Site": "none",
         "Sec-Fetch-User": "?1",
         "Upgrade-Insecure-Requests": "1",
-        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
         "sec-ch-ua-mobile": "?1",
         "sec-ch-ua-platform": "\"Android\""
       },
       "order": [
         {
           "key": "sec-ch-ua",
-          "value": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\""
+          "value": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\""
         },
         {
           "key": "sec-ch-ua-mobile",
@@ -503,7 +551,7 @@ DATA len=7
         },
         {
           "key": "accept",
-          "value": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+          "value": "text/html,application/xhtml+xml,application/xml;q=0.9,image/jxl,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
         },
         {
           "key": "sec-fetch-site",
@@ -533,7 +581,8 @@ DATA len=7
           "key": "priority",
           "value": "u=0, i"
         }
-      ]
+      ],
+      "image_accept": "image/jxl,image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
     },
     "protocols": {
       "http3": true

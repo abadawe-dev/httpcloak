@@ -3892,7 +3892,9 @@ var presets = map[string]func() *Preset{
 	"safari-latest-ios":      IOSSafari18,
 	"chrome-latest-android":  AndroidChrome155,
 
-	// Backwards compatibility aliases (old naming convention)
+	// Backwards compatibility aliases (old naming convention). The -latest
+	// ones follow chrome-latest-ios and chrome-latest-android; they were left
+	// on 148 when those moved on.
 	"ios-chrome-143":        IOSChrome143,
 	"ios-chrome-144":        IOSChrome144,
 	"ios-chrome-145":        IOSChrome145,
@@ -3907,9 +3909,9 @@ var presets = map[string]func() *Preset{
 	"android-chrome-146":    AndroidChrome146,
 	"android-chrome-147":    AndroidChrome147,
 	"android-chrome-148":    AndroidChrome148,
-	"ios-chrome-latest":     IOSChrome148,
+	"ios-chrome-latest":     IOSChrome152,
 	"ios-safari-latest":     IOSSafari18,
-	"android-chrome-latest": AndroidChrome148,
+	"android-chrome-latest": AndroidChrome155,
 }
 
 // Get returns a preset by name. Checks custom registry first, then built-in
