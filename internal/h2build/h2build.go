@@ -120,15 +120,20 @@ func Transport(o Options) *http2.Transport {
 		// dest image like an <img>, but goes at u=1 where the <img> goes at u=2.
 		// nil, for an unknown dest and no header, falls back to HeaderPriority.
 		//
+		// That is Chromium's model only. Firefox's weight is not a function of
+		// the urgency (u=2 and u=4 both go at 22), so a "table" preset takes
+		// its weight from the table whatever header the request carries.
+		//
 		// Both names are looked up without regard to case, because exact
 		// headers keep them lowercase and Header.Get would miss them.
 		HeaderPriorityFunc: func() func(*http.Request) *http2.PriorityParam {
 			if !p.H2HasPriorityTable() {
 				return nil
 			}
+			chromium := p.H2PriorityModel() == fingerprint.PriorityModelChromium
 			return func(req *http.Request) *http2.PriorityParam {
 				weight, exclusive, _, ok := p.H2PriorityFor(headerValue(req.Header, "Sec-Fetch-Dest"))
-				if v := headerValue(req.Header, "Priority"); v != "" {
+				if v := headerValue(req.Header, "Priority"); chromium && v != "" {
 					if !ok {
 						exclusive = s.StreamExclusive
 					}
@@ -144,6 +149,10 @@ func Transport(o Options) *http2.Transport {
 				}
 			}
 		}(),
+
+		// Chromium chains each new stream onto the newest open stream at the
+		// same or a higher priority; Firefox and the rest name stream 0.
+		ChainStreamDependencies: p.H2PriorityModel() == fingerprint.PriorityModelChromium,
 
 		HeaderOrder:          p.H2HeaderOrder(),
 		UserAgent:            userAgent,

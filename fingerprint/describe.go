@@ -317,9 +317,21 @@ func flattenHTTP2(p *Preset) *HTTP2Spec {
 				Urgency:     rp.Urgency,
 				Incremental: rp.Incremental,
 				EmitHeader:  rp.EmitHeader,
+				Weight:      rp.Weight,
 			}
 		}
+		// The model only means anything alongside a table, and exporting the
+		// effective one keeps a describe -> load copy on the same model even
+		// if the derivation changes later.
+		model := p.H2PriorityModel()
+		out.PriorityModel = &model
 	}
+
+	// Exported for every preset, table or not: a static priority header in
+	// the preset's header block is stripped on HTTP/1.1 by the same rule, and
+	// the derivation partly reads the name, which a loaded copy may change.
+	h1 := p.SendsPriorityOverHTTP1()
+	out.PriorityOverHTTP1 = &h1
 
 	return out
 }

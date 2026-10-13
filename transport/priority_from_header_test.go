@@ -98,3 +98,28 @@ func TestStreamWeightFollowsTheRequestsPriorityHeader(t *testing.T) {
 		})
 	}
 }
+
+// The header rule is Chromium's. Firefox's weight is not a function of the
+// urgency (it sends 22 at u=2 and at u=4), so a Firefox request that carries
+// its own priority header keeps the weight its dest has.
+func TestFirefoxWeightIgnoresThePriorityHeader(t *testing.T) {
+	srv := startH2CaptureServer(t)
+	tr := NewTransport("firefox-148-windows")
+	tr.SetProtocol(ProtocolHTTP2)
+	tr.SetInsecureSkipVerify(true)
+	defer tr.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	resp, err := tr.Do(ctx, &Request{Method: "GET", URL: "https://" + srv.addr + "/r",
+		Headers: map[string][]string{"Sec-Fetch-Dest": {"image"}, "Priority": {"u=1, i"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	c := <-srv.captures
+	if got := int(c.Priority.Weight) + 1; got != 12 || c.Priority.Exclusive {
+		t.Errorf("firefox image with priority %q: weight %d exclusive %v, want 12 false",
+			c.Headers["priority"], got, c.Priority.Exclusive)
+	}
+}

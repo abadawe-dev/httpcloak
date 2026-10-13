@@ -287,7 +287,8 @@ func TestDescribe_PriorityTableEmittedForRFC7540Presets(t *testing.T) {
 		"chrome-145",         // inherits default
 		"chrome-141",         // inherits default
 		"chrome-133",         // inherits default
-		"firefox-148",        // inherits default
+		// firefox-148 carries its own, shorter table; see
+		// TestFirefoxPriorityTableFollowsTheCaptures.
 	}
 	mustOmit := []string{
 		"chrome-147-ios",

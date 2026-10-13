@@ -2924,9 +2924,10 @@ func applyPresetHeaders(httpReq *http.Request, preset *fingerprint.Preset, custo
 		// detector runs (so Sec-Fetch-Dest is final). Presets without a table
 		// retain the static priority set by HeaderOrder / sniffXHRMode above.
 		//
-		// Skip on HTTP/1.1 — Chrome never sends the priority: header on H1;
-		// the H1 strip below handles cleanup either way.
-		if (protocol == "h2" || protocol == "h3") && preset.H2HasPriorityTable() {
+		// On every protocol: Firefox sends the same priority header over
+		// HTTP/1.1 as over HTTP/2. Chromium sends none on HTTP/1.1, and the
+		// strip below removes it there.
+		if preset.H2HasPriorityTable() {
 			dest := httpReq.Header.Get("Sec-Fetch-Dest")
 			if _, _, hv, ok := preset.H2PriorityFor(dest); ok {
 				if hv == "" {
@@ -2944,10 +2945,10 @@ func applyPresetHeaders(httpReq *http.Request, preset *fingerprint.Preset, custo
 			}
 		}
 
-		// Chrome does NOT send Priority header on HTTP/1.1, only on HTTP/2 and HTTP/3.
-		// Some anti-bots (Cloudflare, Datadome, Akamai) check for this and flag requests
-		// that send Priority on H1 as bots.
-		if protocol == "h1" && isChromePreset(preset.Name) {
+		// Chromium does NOT send the priority header on HTTP/1.1, only on
+		// HTTP/2 and HTTP/3, and sending it there is a tell. See
+		// SendsPriorityOverHTTP1 for which presets that covers.
+		if protocol == "h1" && !preset.SendsPriorityOverHTTP1() {
 			httpReq.Header.Del("Priority")
 			httpReq.Header.Del("priority")
 		}
@@ -3090,11 +3091,6 @@ func isAPIContentTypeValue(ct string) bool {
 		strings.HasPrefix(lower, "text/plain") ||
 		// Any other application/* that isn't a form type is API-ish.
 		(strings.HasPrefix(lower, "application/") && !isFormContentTypeValue(lower))
-}
-
-// isChromePreset returns true if the preset name indicates a Chrome fingerprint.
-func isChromePreset(name string) bool {
-	return strings.HasPrefix(name, "chrome-") || strings.HasPrefix(name, "Chrome")
 }
 
 func extractHost(urlStr string) string {

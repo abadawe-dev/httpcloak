@@ -186,6 +186,15 @@ type HTTP2Spec struct {
 	// preset's static StreamWeight / StreamExclusive is used for every
 	// request (legacy single-weight behaviour).
 	PriorityTable map[string]ResourcePrioritySpec `json:"priority_table,omitempty"`
+
+	// PriorityModel is "chromium" or "table"; see
+	// H2FingerprintConfig.PriorityModel. Omitted derives it from
+	// stream_exclusive.
+	PriorityModel *string `json:"priority_model,omitempty"`
+
+	// PriorityOverHTTP1 sends the table's priority header on HTTP/1.1 too;
+	// see Preset.SendsPriorityOverHTTP1. Omitted derives it.
+	PriorityOverHTTP1 *bool `json:"priority_over_http1,omitempty"`
 }
 
 // ResourcePrioritySpec is the JSON shape of fingerprint.ResourcePriority.
@@ -193,9 +202,10 @@ type HTTP2Spec struct {
 // inherit zero values (urgency=0 → highest, incremental=false, emit_header=false)
 // which is rarely what a real preset wants — populate explicitly.
 type ResourcePrioritySpec struct {
-	Urgency     uint8 `json:"urgency"`
-	Incremental bool  `json:"incremental"`
-	EmitHeader  bool  `json:"emit_header"`
+	Urgency     uint8  `json:"urgency"`
+	Incremental bool   `json:"incremental"`
+	EmitHeader  bool   `json:"emit_header"`
+	Weight      uint16 `json:"weight,omitempty"` // 1-256; omitted = from the urgency
 }
 
 // HTTP2SettingSpec represents a single HTTP/2 SETTINGS frame entry.
@@ -1078,7 +1088,8 @@ func applyHTTP2(p *Preset, spec *HTTP2Spec) error {
 		spec.StreamPriorityMode != nil ||
 		spec.DisableCookieSplit != nil || spec.PriorityTable != nil ||
 		spec.DataFrameMaxSize != nil || spec.PrefacePingIdleMs != nil ||
-		spec.PrefacePingHangMs != nil || spec.IdlePingMs != nil {
+		spec.PrefacePingHangMs != nil || spec.IdlePingMs != nil ||
+		spec.PriorityModel != nil || spec.PriorityOverHTTP1 != nil {
 		if p.H2Config == nil {
 			p.H2Config = &H2FingerprintConfig{}
 		}
@@ -1143,8 +1154,16 @@ func applyHTTP2(p *Preset, spec *HTTP2Spec) error {
 					Urgency:     rps.Urgency,
 					Incremental: rps.Incremental,
 					EmitHeader:  rps.EmitHeader,
+					Weight:      rps.Weight,
 				}
 			}
+		}
+		if spec.PriorityModel != nil {
+			p.H2Config.PriorityModel = *spec.PriorityModel
+		}
+		if spec.PriorityOverHTTP1 != nil {
+			v := *spec.PriorityOverHTTP1
+			p.H2Config.PriorityOverHTTP1 = &v
 		}
 	}
 
@@ -1461,6 +1480,22 @@ func validatePreset(p *Preset, spec *PresetSpec) error {
 				// valid
 			default:
 				return fmt.Errorf("invalid stream_priority_mode: %q (must be chrome/default)", *spec.HTTP2.StreamPriorityMode)
+			}
+		}
+
+		if spec.HTTP2.PriorityModel != nil {
+			switch *spec.HTTP2.PriorityModel {
+			case PriorityModelChromium, PriorityModelTable:
+			default:
+				return fmt.Errorf("invalid priority_model: %q (must be chromium/table)", *spec.HTTP2.PriorityModel)
+			}
+		}
+		for dest, rp := range spec.HTTP2.PriorityTable {
+			if rp.Urgency > 7 {
+				return fmt.Errorf("priority_table[%q].urgency %d is out of range (0-7)", dest, rp.Urgency)
+			}
+			if rp.Weight > 256 {
+				return fmt.Errorf("priority_table[%q].weight %d is out of range (1-256)", dest, rp.Weight)
 			}
 		}
 	}

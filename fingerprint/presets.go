@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"runtime"
+	"strings"
 	"time"
 
 	tls "github.com/sardanioss/utls"
@@ -487,7 +488,27 @@ type H2FingerprintConfig struct {
 	// Map keys are sec-fetch-dest values exactly as Chrome emits them
 	// ("document", "image", "script", "empty", etc.). Lookups are case-sensitive.
 	PriorityTable map[string]ResourcePriority
+
+	// PriorityModel says how a browser turns a request's priority into the
+	// HTTP/2 HEADERS priority fields. "chromium": the weight is a function of
+	// the request's urgency, so a request carrying its own priority header
+	// gets the weight that goes with it, and each stream depends exclusively
+	// on the newest open stream at the same or a higher priority. "table":
+	// the weight comes straight from the table entry or the static weight,
+	// and the dependency is always 0, which is what Firefox does. Empty
+	// derives it; see H2PriorityModel.
+	PriorityModel string
+
+	// PriorityOverHTTP1 says whether the table's priority header also goes
+	// out on HTTP/1.1. nil derives it; see SendsPriorityOverHTTP1.
+	PriorityOverHTTP1 *bool
 }
+
+// Priority models, see H2FingerprintConfig.PriorityModel.
+const (
+	PriorityModelChromium = "chromium"
+	PriorityModelTable    = "table"
+)
 
 // ResourcePriority describes a single browser priority decision for one
 // resource class (sec-fetch-dest). Three orthogonal facts:
@@ -501,10 +522,16 @@ type H2FingerprintConfig struct {
 //     Chrome omits the header entirely on async/defer scripts even though
 //     the wire weight defaults to 147 (urgency=3). The wire frame is still
 //     emitted; only the HTTP header is suppressed.
+//
+// Weight, when set, is the HTTP/2 stream weight itself, for browsers whose
+// weight is not a function of the urgency. Firefox sends weight 22 at u=2 and
+// at u=4, and 32 for a font that carries no priority header at all. Zero means
+// Chromium's derivation from the urgency.
 type ResourcePriority struct {
-	Urgency     uint8 // 0–7; 3 = default (no `u=` on header)
-	Incremental bool  // RFC 9218 `i` parameter
-	EmitHeader  bool  // false → suppress the priority: HTTP header entirely
+	Urgency     uint8  // 0–7; 3 = default (no `u=` on header)
+	Incremental bool   // RFC 9218 `i` parameter
+	EmitHeader  bool   // false → suppress the priority: HTTP header entirely
+	Weight      uint16 // 1–256 explicit stream weight; 0 = from the urgency
 }
 
 // chromePriorityDefaultUrgency is Chrome's internal default urgency when no
@@ -521,11 +548,8 @@ const chromePriorityDefaultUrgency uint8 = 3
 // Rationale: real browsers vary the H2 stream weight per resource type;
 // emitting a constant weight on every HEADERS frame is detectable by
 // passive H2 fingerprinters. The Chrome 147 table is the best per-dest
-// approximation we have ground-truth captures for. Firefox has slightly
-// different urgencies in its RFC 9218 emission; until we have Firefox
-// captures, Firefox will inherit this Chrome-shaped table — a closer
-// approximation than the prior single-weight fallback, but not byte-exact
-// to real Firefox. Override per-preset by setting H2Config.PriorityTable
+// approximation we have ground-truth captures for. Firefox presets carry
+// their own table, firefoxPriorityTable. Override per-preset by setting H2Config.PriorityTable
 // to either an explicit table (use that) or an empty map (disable
 // priority emission entirely).
 var defaultPriorityTable = map[string]ResourcePriority{
@@ -907,7 +931,49 @@ func (p *Preset) H2PriorityFor(dest string) (weight uint16, exclusive bool, head
 	if !found {
 		return 0, false, "", false
 	}
-	return PriorityFromUrgency(rp.Urgency), true, PriorityHeaderFromResource(rp), true
+	weight = rp.Weight
+	if weight == 0 {
+		weight = PriorityFromUrgency(rp.Urgency)
+	}
+	// Exclusive is a property of the browser, not of the resource: Chromium
+	// sets it on every stream and Firefox on none. It used to be true here
+	// unconditionally, which gave Firefox presets Chromium's flag.
+	return weight, p.HTTP2Settings.StreamExclusive, PriorityHeaderFromResource(rp), true
+}
+
+// H2PriorityModel is the preset's PriorityModel, or, when it does not set one,
+// "chromium" for a preset whose static priority is exclusive and "table"
+// otherwise. Exclusive dependencies are how Chromium's linked list is built;
+// no browser sends them without it.
+func (p *Preset) H2PriorityModel() string {
+	if p.H2Config != nil && p.H2Config.PriorityModel != "" {
+		return p.H2Config.PriorityModel
+	}
+	if p.HTTP2Settings.StreamExclusive && !p.HTTP2Settings.NoRFC7540Priorities {
+		return PriorityModelChromium
+	}
+	return PriorityModelTable
+}
+
+// SendsPriorityOverHTTP1 reports whether the preset's priority header goes out
+// on HTTP/1.1 as well as on HTTP/2 and HTTP/3. H2Config.PriorityOverHTTP1
+// decides when set, and describe always sets it, so a loaded copy keeps the
+// answer whatever it is named.
+//
+// Otherwise it is derived. Chromium sends none on HTTP/1.1, so a preset on the
+// Chromium priority model leaves it off there, whatever the preset is called.
+// So does any preset named for Chrome, whatever its model: Chrome on iOS runs
+// on WebKit's network stack and takes the table model, and its HTTP/1.1
+// requests have never carried the header. Nothing measured says WebKit sends
+// one there. Firefox does, on every protocol.
+func (p *Preset) SendsPriorityOverHTTP1() bool {
+	if p.H2Config != nil && p.H2Config.PriorityOverHTTP1 != nil {
+		return *p.H2Config.PriorityOverHTTP1
+	}
+	if p.H2PriorityModel() == PriorityModelChromium {
+		return false
+	}
+	return !strings.HasPrefix(p.Name, "chrome-") && !strings.HasPrefix(p.Name, "Chrome")
 }
 
 // --- H3 Preset Getters ---
@@ -1183,6 +1249,30 @@ func firefoxH2Config() *H2FingerprintConfig {
 		DisableCookieSplit:  &f,
 		SettingsOrder:       []uint16{1, 2, 4, 5},
 		PseudoHeaderOrder:   []string{":method", ":path", ":authority", ":scheme"},
+		PriorityTable:       firefoxPriorityTable(),
+		PriorityModel:       PriorityModelTable,
+	}
+}
+
+// firefoxPriorityTable is what Firefox sends per resource type over HTTP/2,
+// captured from release builds 133.0, 148.0 and 152.0.6, which agree on every
+// entry. Firefox's weight is not a function of the urgency, so each entry
+// carries it. It never sets the exclusive flag or a parent stream.
+//
+// A dest Firefox varies within is entered at its most common form: script is
+// a parser-blocking <script> (async, defer and module scripts send no header
+// at the same weight), empty is fetch() (an XMLHttpRequest sends no header),
+// and image is an <img> (a preload or a lazy image goes at 11). A dest that is
+// not here falls back to the static weight, 42, which is Firefox's document.
+func firefoxPriorityTable() map[string]ResourcePriority {
+	return map[string]ResourcePriority{
+		"document": {Urgency: 0, Incremental: true, EmitHeader: true, Weight: 42},
+		"style":    {Urgency: 2, EmitHeader: true, Weight: 22},
+		"script":   {Urgency: 2, EmitHeader: true, Weight: 22},
+		"image":    {Urgency: 5, Incremental: true, EmitHeader: true, Weight: 12},
+		"font":     {Urgency: 3, EmitHeader: false, Weight: 32},
+		"iframe":   {Urgency: 4, EmitHeader: true, Weight: 22},
+		"empty":    {Urgency: 4, EmitHeader: true, Weight: 22},
 	}
 }
 

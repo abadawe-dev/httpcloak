@@ -290,3 +290,32 @@ func assertHeader(t *testing.T, headers map[string][]string, key, want string) {
 		t.Errorf("header %q = %q, want %q", key, vals[0], want)
 	}
 }
+
+// A preset with a priority table gets its own browser's priority header on
+// warmup subresources rather than the fallback constants, which matched no
+// browser (Chrome sends u=0 on a stylesheet, u=2, i on an image).
+func TestBuildSubresourceHeadersUsesThePresetsPriorityTable(t *testing.T) {
+	cases := []struct {
+		preset string
+		typ    resourceType
+		want   string
+	}{
+		{"chrome-155-windows", resourceCSS, "u=0"},
+		{"chrome-155-windows", resourceImage, "u=2, i"},
+		{"chrome-155-windows", resourceJS, "u=1"},
+		{"firefox-148-windows", resourceCSS, "u=2"},
+		{"firefox-148-windows", resourceImage, "u=5, i"},
+		{"firefox-148-windows", resourceFont, ""},
+	}
+	for _, tc := range cases {
+		p := fingerprint.Get(tc.preset)
+		h := buildSubresourceHeaders(p, tc.typ, "https://example.com/", "https://example.com/x")
+		got := ""
+		if v := h["Priority"]; len(v) > 0 {
+			got = v[0]
+		}
+		if got != tc.want {
+			t.Errorf("%s type %d: priority %q, want %q", tc.preset, tc.typ, got, tc.want)
+		}
+	}
+}

@@ -326,13 +326,25 @@ func buildSubresourceHeaders(preset *fingerprint.Preset, typ resourceType, pageU
 
 	secFetch := fingerprint.GenerateSecFetchHeaders(reqCtx)
 
+	// The constants above are only a fallback for presets without a priority
+	// table (Safari and iOS, never measured here). Every other preset sends
+	// what its browser sends for the dest; the transport would apply the same
+	// table again, so this keeps the two layers from disagreeing.
+	if preset != nil {
+		if _, _, hv, ok := preset.H2PriorityFor(secFetch.Dest); ok {
+			priority = hv
+		}
+	}
+
 	headers := map[string][]string{
-		"Accept":          {accept},
-		"Sec-Fetch-Site":  {secFetch.Site},
-		"Sec-Fetch-Mode":  {secFetch.Mode},
-		"Sec-Fetch-Dest":  {secFetch.Dest},
-		"Referer":         {pageURL},
-		"Priority":        {priority},
+		"Accept":         {accept},
+		"Sec-Fetch-Site": {secFetch.Site},
+		"Sec-Fetch-Mode": {secFetch.Mode},
+		"Sec-Fetch-Dest": {secFetch.Dest},
+		"Referer":        {pageURL},
+	}
+	if priority != "" {
+		headers["Priority"] = []string{priority}
 	}
 
 	return headers

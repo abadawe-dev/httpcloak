@@ -319,10 +319,12 @@ resource type.
 | `preface_ping_idle_ms` | uint32 | When a connection has been idle this long, the next request on it carries a PING alongside. Omitted or `0` sends none. Chrome uses `10000`. |
 | `preface_ping_hang_ms` | uint32 | The companion hang interval. |
 | `idle_ping_ms` | uint32 | Enables a periodic health-check PING, which no browser sends. Omitted or `0` means off, which is what a browser profile wants. |
+| `priority_model` | string | `"chromium"` or `"table"`. On `chromium` a request's own `priority` header picks its weight and each new stream chains onto the newest open stream at the same or a higher priority, as Chrome does. On `table` the weight always comes from the table and every stream's parent is 0, as in Firefox. Omitted derives it from `stream_exclusive`. See [Per-Resource Priority](../fingerprinting/per-resource-priority). |
+| `priority_over_http1` | bool | Whether the priority header also goes out over HTTP/1.1. Firefox sends it there; Chrome, on every platform, does not. Omitted derives it from the model, and `describe` always writes it out. |
 
 ### `priority_table`
 
-Maps `sec-fetch-dest` values (`document`, `image`, `script`, `style`, `font`, and so on) to per-resource priority settings. When populated, the transport emits a per-request RFC 7540 stream weight derived from `urgency` plus an RFC 9218 `priority:` header on every request, keyed off the request's `sec-fetch-dest`.
+Maps `sec-fetch-dest` values (`document`, `image`, `script`, `style`, `font`, and so on) to per-resource priority settings. When populated, the transport emits a per-request RFC 7540 stream weight, from `weight` when the entry sets one and derived from `urgency` otherwise, plus an RFC 9218 `priority:` header on every request, keyed off the request's `sec-fetch-dest`.
 
 ```json
 "priority_table": {
@@ -337,6 +339,7 @@ Maps `sec-fetch-dest` values (`document`, `image`, `script`, `style`, `font`, an
 | `urgency` | uint8 | 0 (highest) to 7 (lowest). Maps to RFC 9218. |
 | `incremental` | bool | Whether the resource can be processed incrementally. |
 | `emit_header` | bool | When true, the transport emits a `priority:` header on the request. |
+| `weight` | uint16 | 1 to 256. The RFC 7540 weight for this resource type. Omitted derives it from `urgency` the way Chrome does; Firefox's weights are not a function of the urgency, so its table sets them. |
 
 Omit it and every request uses the preset's static `stream_weight` and `stream_exclusive`. That's the legacy single-weight behaviour from before the priority table existed.
 

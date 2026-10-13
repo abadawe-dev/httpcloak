@@ -1581,6 +1581,16 @@ func (c *Client) doHTTP2(ctx context.Context, host, port string, httpReq *http.R
 func (c *Client) doHTTP1(ctx context.Context, host, port string, httpReq *http.Request, timing *protocol.Timing, startTime time.Time) (*http.Response, string, error) {
 	firstByteTime := time.Now()
 
+	// Chromium sends no priority header on HTTP/1.1 (see
+	// SendsPriorityOverHTTP1). The request may go on to another protocol
+	// after this attempt, so strip it from a copy.
+	if c.preset != nil && !c.preset.SendsPriorityOverHTTP1() &&
+		(httpReq.Header.Get("Priority") != "" || len(httpReq.Header["priority"]) > 0) {
+		httpReq = httpReq.Clone(httpReq.Context())
+		httpReq.Header.Del("Priority")
+		delete(httpReq.Header, "priority")
+	}
+
 	resp, err := c.h1Transport.RoundTrip(httpReq)
 	if err != nil {
 		return nil, "", fmt.Errorf("HTTP/1.1 request failed: %w", err)
@@ -1980,6 +1990,7 @@ func applyModeHeaders(httpReq *http.Request, preset *fingerprint.Preset, req *Re
 	default:
 		applyNavigationModeHeaders(httpReq, preset, req)
 	}
+	applyTablePriority(httpReq, preset)
 
 	// Apply user custom headers. User wins over mode defaults — they can project
 	// any intent they want, including deliberate incoherence for site testing.
@@ -2245,7 +2256,29 @@ func applyNoCorsHeaders(httpReq *http.Request, preset *fingerprint.Preset, req *
 	// NO Origin header (no-cors doesn't send Origin)
 	// NO Sec-Fetch-User (only for navigation)
 	// NO Upgrade-Insecure-Requests (only for navigation)
-	// NO Priority header by default (Chrome doesn't send it for most script loads)
+	// The priority header comes from the preset's table, in applyTablePriority.
+}
+
+// applyTablePriority sets the priority header the preset's browser sends for
+// the request's Sec-Fetch-Dest, or removes it where that browser sends none,
+// the way the transport's header pipeline does. The modes above used to
+// hardcode Chrome's values, so a Firefox preset sent Chrome's headers, and
+// no-cors requests sent none at all, where Chrome sends u=0 on a stylesheet,
+// u=1 on a script and u=2, i on an image. A dest the table does not know
+// keeps whatever the mode set. User headers are applied after this and win.
+func applyTablePriority(httpReq *http.Request, preset *fingerprint.Preset) {
+	if !preset.H2HasPriorityTable() {
+		return
+	}
+	_, _, hv, ok := preset.H2PriorityFor(httpReq.Header.Get("Sec-Fetch-Dest"))
+	if !ok {
+		return
+	}
+	if hv == "" {
+		httpReq.Header.Del("Priority")
+		return
+	}
+	httpReq.Header.Set("Priority", hv)
 }
 
 // detectSecFetchSiteForMode determines the Sec-Fetch-Site header value

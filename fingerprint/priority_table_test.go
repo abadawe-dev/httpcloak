@@ -319,7 +319,7 @@ func TestH2PriorityFor_DefaultInheritedByLegacyChrome(t *testing.T) {
 		"worker":   110,
 	}
 	for _, name := range []string{
-		"chrome-146-windows", "chrome-145", "chrome-141", "chrome-133", "firefox-148",
+		"chrome-146-windows", "chrome-145", "chrome-141", "chrome-133",
 	} {
 		p := GetStrict(name)
 		if p == nil {

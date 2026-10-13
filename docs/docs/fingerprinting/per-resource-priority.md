@@ -11,7 +11,7 @@ import TabItem from '@theme/TabItem';
 Browsers don't ask for every resource at the same priority. The HTML document goes out highest, the main stylesheet right behind it, deferred scripts way at the back, images somewhere in the middle. The browser signals this in two places:
 
 - **RFC 7540 stream weights** on the H2 PRIORITY frame attached to HEADERS. Numeric weight 1 to 256.
-- **RFC 9218 priority HTTP header** on every H2 / H3 request. Format `u=N, i` where N is urgency 0-7 and `i` is the incremental flag.
+- **RFC 9218 priority HTTP header** on H2 and H3 requests (Firefox sends it over HTTP/1.1 as well). Format `u=N, i` where N is urgency 0-7 and `i` is the incremental flag.
 
 Chrome 147+ desktop emits both. The header carries urgency, and the wire weight is derived from urgency by `weight = 256 - (urgency * 73) / 2`. So urgency 0 lands on weight 256, urgency 1 on 220, urgency 2 on 183, urgency 3 on 147 (Chrome's default), urgency 4 on 110.
 
@@ -38,9 +38,21 @@ The transport reads `Sec-Fetch-Dest` from the outgoing request and looks it up i
 | `track`    | 3 | true  | `i` |
 | `worker`   | 4 | true  | `u=4, i` |
 
-Captured from real Chrome 147+ desktop traffic. Each Chrome / Firefox / Safari preset can override it via the `priority_table` field in the JSON spec. Presets that opt out entirely (Safari, iOS Chrome, iOS Safari, `no_rfc7540_priorities: true`) skip the H2 PRIORITY frame and only emit the priority header.
+Captured from real Chrome 147+ desktop traffic. Each Chrome / Firefox / Safari preset can override it via the `priority_table` field in the JSON spec. Presets that set `no_rfc7540_priorities: true` (Safari, iOS Chrome, iOS Safari) advertise `SETTINGS_NO_RFC7540_PRIORITIES` and don't use the table at all: every request carries the preset's static weight, and any priority header comes from the preset's own header block.
 
 The wire weight on the H2 HEADERS frame comes from the urgency. `Sec-Fetch-Dest: image` lands on wire weight 183 (urgency 2), and `Sec-Fetch-Dest: style` lands on wire weight 256 (urgency 0). The priority HTTP header carries the same urgency value.
+
+### Chrome and Firefox work it out differently
+
+The table above is Chrome's, and so is the rule that turns urgency into a weight. Firefox does neither. Its weight is a fixed number per resource type, unrelated to the urgency in its header: a document goes at 42, a stylesheet, script, iframe or `fetch()` at 22, a font at 32 and an image at 12, with headers of `u=0, i`, `u=2`, `u=4` and `u=5, i` to match. Measured on Firefox 133, 148 and 152, which agree on every entry. The Firefox presets carry that table.
+
+Three more differences come with it, and a preset's `priority_model` (`chromium` or `table`) says which side it is on:
+
+- **Who decides the weight.** On the `chromium` model a request that sets its own `priority` header gets the weight that goes with that urgency, as Chrome does for a `fetch()` with a priority hint. On the `table` model the weight always comes from the table entry, whatever header the request carries.
+- **Stream dependencies.** Chrome never names stream 0 as the parent once two requests overlap on a connection: each new stream depends, exclusively, on the newest open stream at the same or a higher priority, so the tree is one chain. The `chromium` model builds that chain. Firefox names stream 0, never exclusive, and so does the `table` model.
+- **HTTP/1.1.** Chrome sends no priority header over HTTP/1.1, and Firefox sends the same one it sends over HTTP/2. Chrome on iOS runs on WebKit and sends none there either. A preset can state this outright with `priority_over_http1`.
+
+Leave `priority_model` out and it is derived from `stream_exclusive`, which only Chromium sets. A table entry can also carry its own `weight` (1 to 256), which overrides the one derived from the urgency; that is how the Firefox table is written.
 
 ## What you set, what you get
 
@@ -202,19 +214,17 @@ To turn per-resource priority off entirely on a preset (every request gets the s
 
 ## Per-preset behaviour
 
-| Preset family | RFC 7540 PRIORITY frame | RFC 9218 priority header | Default table |
+| Preset family | Priority fields on HEADERS | `priority` header | Table |
 |---|---|---|---|
-| Chrome desktop 147+ (incl. 148) | yes | yes | 14-dest table above |
-| Chrome desktop 141 / 133 (legacy presets) | yes (static weight 256, exclusive) | no | n/a |
-| Chrome Android 148 | yes | yes | 14-dest table above |
-| Firefox 148 | yes | yes (different urgencies, currently uses Chrome table, capture pending) | inherits Chrome table |
-| Safari 18 desktop | no | yes | inherits Chrome table for header values; never emits H2 PRIORITY frame |
-| iOS Chrome / iOS Safari | no | yes | same |
+| Chrome desktop and Android | weight from the urgency (256, 220, 183, ...), exclusive, chained onto the newest open stream at the same or a higher priority | HTTP/2 and HTTP/3, never HTTP/1.1 | Chrome's 14-destination table |
+| Firefox | weight from Firefox's table (42, 32, 22, 12), never exclusive, parent stream 0 | every protocol, HTTP/1.1 included | Firefox's table |
+| Safari, desktop and iOS | weight 255 on every request, never exclusive, parent stream 0 | none | none |
+| Chrome on iOS | weight 255 on every request, never exclusive, parent stream 0 | HTTP/2 and HTTP/3, never HTTP/1.1 | none |
 
-A custom preset inherits the 14-dest table for free unless you override it. To opt out of RFC 7540 entirely (no PRIORITY frame on the wire), set `http2.no_rfc7540_priorities: true`. The priority HTTP header still fires unless you flip `emit_header: false` on every entry too.
+A custom preset inherits the 14-dest table for free unless you override it. Setting `http2.no_rfc7540_priorities: true` turns the table off and advertises `SETTINGS_NO_RFC7540_PRIORITIES`, the way Safari does; every request then goes at the static `stream_weight`.
 
 ## Why this matters
 
 A constant H2 stream weight on every request is one of the easiest H2 fingerprint giveaways, and Cloudflare and Akamai both check it. The priority header check is newer, since RFC 9218 only stabilized in 2022, but it's becoming standard at major edge providers. httpcloak handles both as long as your preset is a modern one (Chrome 147+, Firefox 148+, Safari 18+).
 
-Edge-vendor challenges that don't reproduce in a real browser session usually trace back to this layer. Capture the wire-level H2 frames from both, diff the priority weights, and check whether your preset's `priority_table` matches. The legacy `chrome-141` and `chrome-133` presets still ship a constant `weight=256, exclusive=true` on every request because they predate the per-resource priority work; modern Cloudflare flags that. The 143-148 family inherits the per-`Sec-Fetch-Dest` table after issue #56 (v1.6.5 retroactively gave chrome-141-through-chrome-147 the inherited table; v1.6.6 keeps that). For new code, stick with `chrome-latest` or any 143+ explicit version.
+Edge-vendor challenges that don't reproduce in a real browser session usually trace back to this layer. Capture the wire-level H2 frames from both, diff the priority weights, and check whether your preset's `priority_table` matches. Every Chrome preset, the older `chrome-133` and `chrome-141` included, uses the per-`Sec-Fetch-Dest` table; v1.6.5 gave it to the presets that predate it (issue #56). For new code, stick with `chrome-latest` or an explicit recent version.
