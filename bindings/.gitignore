@@ -4,6 +4,8 @@ clib/dist/
 *.dylib
 *.dll
 *.h
+# ...except the hand-written callback header the C shim builds from.
+!clib/callback_pool.h
 
 # Python
 __pycache__/

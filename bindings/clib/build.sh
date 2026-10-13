@@ -67,6 +67,8 @@ build_for_platform() {
     local header_basename="libhttpcloak-${os}-${arch}.h"
     if [ -f "$DIST_DIR/$header_basename" ]; then
         mv "$DIST_DIR/$header_basename" "$DIST_DIR/httpcloak.h"
+        # The generated header includes the callback typedefs from here.
+        cp "$SCRIPT_DIR/callback_pool.h" "$DIST_DIR/"
     fi
 
     echo "  Built: $output"
