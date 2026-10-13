@@ -162,3 +162,25 @@ func sortedHex(p *Preset) []string {
 	sort.Strings(out)
 	return out
 }
+
+// The Headers map is what a preset falls back on without an order list, and
+// what Describe exports as its values. It drifted from the order list when a
+// version changed a header there alone: the 155 presets sent the new Accept
+// with image/jxl while the map kept 154's, and the iOS presets from 148 on
+// sent zstd in Accept-Encoding while the map did not. Nothing on the wire was
+// wrong, but a described preset carried two different values for one header.
+func TestHeaderMapAgreesWithHeaderOrder(t *testing.T) {
+	for _, name := range Available() {
+		p := Get(name)
+		for _, hp := range p.HeaderOrder {
+			if hp.Value == "" {
+				continue
+			}
+			for k, v := range p.Headers {
+				if strings.EqualFold(k, hp.Key) && v != hp.Value {
+					t.Errorf("%s: Headers[%q] = %q, but the order list sends %q", name, k, v, hp.Value)
+				}
+			}
+		}
+	}
+}
