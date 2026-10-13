@@ -3179,6 +3179,14 @@ var (
 
 const lowerHeaderNameCacheMax = 1024
 
+// headerNameCacheMaxLen caps the length of a name either header-name cache
+// will hold. The entry count alone bounds the caches by number, not by size:
+// a peer sending long distinct names could otherwise pin a thousand of them
+// for the life of the process. Real header names are far shorter (the
+// longest common ones run to about 40 bytes); a longer one is converted
+// without being cached.
+const headerNameCacheMaxLen = 64
+
 // lowerHeaderName returns strings.ToLower(name), without allocating for the
 // two shapes response header names actually arrive in: already-lowercase
 // names return as-is, and canonical-cased names hit the memo after their
@@ -3196,6 +3204,9 @@ func lowerHeaderName(name string) string {
 	}
 	if lowerASCII {
 		return name
+	}
+	if len(name) > headerNameCacheMaxLen {
+		return strings.ToLower(name)
 	}
 	if lower, ok := lowerHeaderNameCache.Load(name); ok {
 		return lower.(string)
@@ -3260,6 +3271,9 @@ func canonicalHeaderName(name string) string {
 }
 
 func canonicalHeaderNameSlow(name string) string {
+	if len(name) > headerNameCacheMaxLen {
+		return http.CanonicalHeaderKey(name)
+	}
 	if canonical, ok := canonicalHeaderNameCache.Load(name); ok {
 		return canonical.(string)
 	}

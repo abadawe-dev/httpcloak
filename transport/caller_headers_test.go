@@ -3,6 +3,7 @@ package transport
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	http "github.com/sardanioss/http"
@@ -170,5 +171,28 @@ func TestCanonicalHeaderNameCacheBounded(t *testing.T) {
 	// that neighborhood is fine, a multiple of it is a leak.
 	if n := canonicalHeaderNameCacheSize.Load(); n > canonicalHeaderNameCacheMax+8 {
 		t.Errorf("canonicalHeaderNameCacheSize = %d, want <= %d", n, canonicalHeaderNameCacheMax+8)
+	}
+}
+
+// Neither name cache holds a name longer than headerNameCacheMaxLen, so a peer
+// cannot pin long names in them for the life of the process, and such a name
+// still converts exactly as the uncached functions would.
+func TestHeaderNameCachesSkipLongNames(t *testing.T) {
+	long := "X-" + strings.Repeat("Long-Name-", 8) + "End"
+	if len(long) <= headerNameCacheMaxLen {
+		t.Fatalf("probe name is only %d bytes", len(long))
+	}
+	if got, want := lowerHeaderName(long), strings.ToLower(long); got != want {
+		t.Errorf("lowerHeaderName = %q, want %q", got, want)
+	}
+	if _, cached := lowerHeaderNameCache.Load(long); cached {
+		t.Error("lowerHeaderName cached a name longer than the cap")
+	}
+	lowerLong := strings.ToLower(long)
+	if got, want := canonicalHeaderName(lowerLong), http.CanonicalHeaderKey(lowerLong); got != want {
+		t.Errorf("canonicalHeaderName = %q, want %q", got, want)
+	}
+	if _, cached := canonicalHeaderNameCache.Load(lowerLong); cached {
+		t.Error("canonicalHeaderName cached a name longer than the cap")
 	}
 }
