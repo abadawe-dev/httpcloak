@@ -93,6 +93,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Streamed responses in Node.js and .NET can read their trailers**: 1.7.1 gave streamed responses a `trailer()` method, so a gRPC caller could read its status, but only the Python binding got one. Node.js now has `StreamResponse.trailer()` and .NET `StreamResponse.GetTrailer()`, which behave the same way: call it once the body has been read to the end.
 
+- **The Python session cache no longer leaks every value it returns**: a `get` or ECH `get` callback handed its result back as bytes, which makes Python keep a reference to each one it can never release, so every ticket the cache served stayed in memory for the life of the process. Measured, 20,000 lookups of a 20 KB value grew the process by 383 MB. Results now go back as the address of a buffer the backend keeps alive only until it has served 128 more, and the same lookups grow it by 3 MB.
+
 ## [1.7.2] - 2026-09-03
 
 Worth taking if you use HTTP/3 with a custom fingerprint. A preset built from a

@@ -11,12 +11,14 @@ library invokes from its own threads are exercised for real, sync and async.
 """
 
 import asyncio
+import ctypes
 import os
 import ssl
 import subprocess
 import sys
 import tempfile
 import threading
+import tracemalloc
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, "bindings/python")
@@ -34,6 +36,45 @@ def test_configure_session_cache_registers_a_backend():
     backend = httpcloak.configure_session_cache(get=lambda k: None, put=lambda k, v, t: 0)
     assert backend is not None
     httpcloak.clear_session_cache()
+
+
+def _call_get_callback(make, value, n):
+    """Calls a get callback the way the library does, n times, and returns the
+    traced memory growth. Each call reads the result back through its address
+    so a wrong or dangling pointer fails on the value, not just on memory."""
+    callback = make()
+    caller = ctypes.cast(callback, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_char_p))
+    expected = value.encode()
+    tracemalloc.start()
+    try:
+        before = tracemalloc.get_traced_memory()[0]
+        for _ in range(n):
+            address = caller(b"key")
+            assert address, "callback returned NULL for a stored value"
+            assert ctypes.string_at(address) == expected
+        return tracemalloc.get_traced_memory()[0] - before
+    finally:
+        tracemalloc.stop()
+
+
+# A get callback that returns bytes through a c_char_p result makes ctypes keep
+# a reference to every result for good, so each cache hit leaked its value. The
+# backend keeps only its bounded ring of recent buffers, so growth must stay
+# near ring size times value size whatever the number of calls.
+def test_get_callbacks_do_not_leak_their_results():
+    value = "v" * 50_000
+    backend = SessionCacheBackend(get=lambda k: value, get_ech=lambda k: value)
+    ring_bytes = 128 * len(value)
+    for make in (backend._make_get_callback, backend._make_get_ech_callback):
+        grown = _call_get_callback(make, value, 2_000)
+        assert grown < 2 * ring_bytes, f"{make.__name__}: grew {grown} bytes over 2000 calls"
+
+
+def test_get_callbacks_return_null_for_a_miss():
+    backend = SessionCacheBackend(get=lambda k: None, get_ech=lambda k: None)
+    for make in (backend._make_get_callback, backend._make_get_ech_callback):
+        caller = ctypes.cast(make(), ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_char_p))
+        assert caller(b"key") is None
 
 
 class _OK(BaseHTTPRequestHandler):

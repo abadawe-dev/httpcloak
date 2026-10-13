@@ -32,7 +32,18 @@ import platform
 import threading
 import time
 import uuid
-from ctypes import CFUNCTYPE, POINTER, c_char_p, c_int, c_int64, c_void_p, cast, cdll
+from ctypes import (
+    CFUNCTYPE,
+    POINTER,
+    addressof,
+    c_char_p,
+    c_int,
+    c_int64,
+    c_void_p,
+    cast,
+    cdll,
+    create_string_buffer,
+)
 from io import IOBase
 from pathlib import Path
 from typing import Any, BinaryIO, Dict, List, Optional, Sequence, Tuple, Union
@@ -1038,7 +1049,11 @@ ASYNC_CALLBACK = CFUNCTYPE(None, c_int64, c_char_p, c_char_p)
 
 # Session cache callback types
 # get: char* (*)(const char* key) - returns JSON string or NULL
-SESSION_CACHE_GET_CALLBACK = CFUNCTYPE(c_char_p, c_char_p)
+# The get callbacks return c_void_p, not c_char_p: a Python callback that
+# returns bytes through a c_char_p result makes ctypes keep a reference it can
+# never drop, so every cache hit would leak its value. They return the address
+# of a buffer the backend keeps alive instead (see SessionCacheBackend).
+SESSION_CACHE_GET_CALLBACK = CFUNCTYPE(c_void_p, c_char_p)
 # put: int (*)(const char* key, const char* value_json, int64_t ttl_seconds)
 SESSION_CACHE_PUT_CALLBACK = CFUNCTYPE(c_int, c_char_p, c_char_p, c_int64)
 # delete: int (*)(const char* key)
@@ -1046,7 +1061,7 @@ SESSION_CACHE_DELETE_CALLBACK = CFUNCTYPE(c_int, c_char_p)
 # error: void (*)(const char* operation, const char* key, const char* error)
 SESSION_CACHE_ERROR_CALLBACK = CFUNCTYPE(None, c_char_p, c_char_p, c_char_p)
 # ech_get: char* (*)(const char* key) - returns base64 string or NULL
-ECH_CACHE_GET_CALLBACK = CFUNCTYPE(c_char_p, c_char_p)
+ECH_CACHE_GET_CALLBACK = CFUNCTYPE(c_void_p, c_char_p)
 # ech_put: int (*)(const char* key, const char* value_base64, int64_t ttl_seconds)
 ECH_CACHE_PUT_CALLBACK = CFUNCTYPE(c_int, c_char_p, c_char_p, c_int64)
 
@@ -5113,19 +5128,19 @@ class SessionCacheBackend:
         self._c_put_ech = None
         self._c_error = None
 
-        # Persistent buffers for the get/get_ech callbacks. The Go side does
-        # NOT free the bytes we return and copies via C.GoString AFTER the
-        # callback frame unwinds, so a transient `result.encode()` would be
-        # freed by CPython before Go reads it (use-after-free).
+        # Persistent buffers for the get/get_ech callbacks. The callbacks hand
+        # back a raw address, and the native side copies the string only after
+        # the callback frame unwinds and does not free it, so a transient
+        # buffer would be freed by CPython before the copy (use-after-free).
         #
         # A single per-instance slot fixes the serial case but re-introduces
         # the UAF when ONE backend is shared across sessions/threads (a common
         # cache-pool pattern): a concurrent get on another thread overwrites
-        # the slot before Go copies the previous result. Instead we retain the
-        # last N encoded buffers in a bounded, lock-guarded ring. Each fresh
-        # buffer stays referenced until N more get calls happen — far more than
-        # the microsecond window between returning to Go and its C.GoString
-        # copy — so recent buffers survive concurrent shared-backend use
+        # the slot before the native side copies the previous result. Instead
+        # we retain the last N buffers in a bounded, lock-guarded ring. Each
+        # fresh buffer stays referenced until N more get calls happen, far
+        # more than the microsecond window between returning and the native
+        # copy, so recent buffers survive concurrent shared-backend use
         # without unbounded growth.
         from collections import deque
 
@@ -5147,14 +5162,14 @@ class SessionCacheBackend:
                 result = get_fn(key)
                 if result is None:
                     return None
-                # Retain the encoded bytes in the bounded ring so the buffer
-                # outlives this callback frame — Go copies it via C.GoString
-                # after we return and does not free it. The lock-guarded ring
-                # keeps recent buffers referenced under concurrent shared use.
-                buf = result.encode("utf-8")
+                # Retain the buffer in the bounded ring so it outlives this
+                # callback frame: the native side copies it after we return
+                # and does not free it. The lock-guarded ring keeps recent
+                # buffers referenced under concurrent shared use.
+                buf = create_string_buffer(result.encode("utf-8"))
                 with owner._get_buf_lock:
                     owner._get_buf_ring.append(buf)
-                return buf
+                return addressof(buf)
             except Exception:
                 return None
 
@@ -5204,14 +5219,14 @@ class SessionCacheBackend:
                 result = get_fn(key)
                 if result is None:
                     return None
-                # Retain the encoded bytes in the bounded ring so the buffer
-                # outlives this callback frame — Go copies it via C.GoString
-                # after we return and does not free it. The lock-guarded ring
-                # keeps recent buffers referenced under concurrent shared use.
-                buf = result.encode("utf-8")
+                # Retain the buffer in the bounded ring so it outlives this
+                # callback frame: the native side copies it after we return
+                # and does not free it. The lock-guarded ring keeps recent
+                # buffers referenced under concurrent shared use.
+                buf = create_string_buffer(result.encode("utf-8"))
                 with owner._ech_get_buf_lock:
                     owner._ech_get_buf_ring.append(buf)
-                return buf
+                return addressof(buf)
             except Exception:
                 return None
 
