@@ -37,7 +37,7 @@ Constructor signature (named arguments are the way):
 
 ```csharp
 public Session(
-    string preset = "chrome-152",
+    string preset = "chrome-146",
     string? proxy = null,
     string? tcpProxy = null,
     string? udpProxy = null,
@@ -362,7 +362,7 @@ Constructor signatures:
 
 ```csharp
 new HttpCloakHandler(
-    string preset = "chrome-152",
+    string preset = "chrome-146",
     string? proxy = null,
     string? tcpProxy = null,
     string? udpProxy = null,
@@ -450,7 +450,7 @@ HttpCloak.CustomPresets     // Describe / LoadFromJson / LoadFromFile / Unregist
 HttpCloak.Presets           // PascalCase string constants (Presets.Chrome146, Presets.Firefox133, ...)
 ```
 
-The `Presets` static class mirrors the runtime registry. `Presets.ChromeLatest` (and the platform variants `ChromeLatestWindows`, `ChromeLatestLinux`, etc.) auto-resolves to the newest shipped Chrome; pin to a specific major with `Presets.Chrome148Windows` if you need byte-for-byte reproducibility. Firefox, Safari and the mobile families are similarly enumerated. For the authoritative live list including any custom presets loaded at runtime, `HttpCloakInfo.AvailablePresets()` returns a `Dictionary<string, PresetInfo>` keyed by the canonical preset name.
+The `Presets` static class mirrors the runtime registry. `Presets.ChromeLatest` (and the platform variants `ChromeLatestWindows`, `ChromeLatestLinux`, etc.) auto-resolves to the newest shipped Chrome; pin to a specific major with `Presets.Chrome155Windows` (constants run through 155) if you need byte-for-byte reproducibility. Firefox, Safari and the mobile families are similarly enumerated. For the authoritative live list including any custom presets loaded at runtime, `HttpCloakInfo.AvailablePresets()` returns a `Dictionary<string, PresetInfo>` keyed by the canonical preset name.
 
 `SessionCacheBackend` plugs a distributed TLS session cache (Redis, Memcached, your own store) into the binding via an `ISessionCache` interface. Construct it with your implementation and call `Register()`, or use the `HttpCloakCache.ConfigureSessionCache(impl)` shorthand. The wrapper pins the six callback delegates as instance fields, swallows user-side exceptions back to "not found" / non-zero, and frees its trailing string buffers on `Dispose`. Full design in [Session cache](/advanced-tls/session-cache).
 

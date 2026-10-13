@@ -15,16 +15,16 @@ DevTools doesn't show you header order, so you're flying blind there. Hit [tls.p
 
 ## What ships by default
 
-Every preset carries its own browser header set. For `chrome-152-linux` (today's default), the request goes out as:
+Every preset carries its own browser header set. For `chrome-latest` on a Linux host (which resolves to `chrome-155-linux`), a navigation goes out as:
 
 | Position | Header | Example value |
 |---|---|---|
-| 1 | `sec-ch-ua` | `"Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"` |
+| 1 | `sec-ch-ua` | `"Google Chrome";v="155", "Chromium";v="155", "Not(A:Brand";v="24"` |
 | 2 | `sec-ch-ua-mobile` | `?0` |
 | 3 | `sec-ch-ua-platform` | `"Linux"` |
 | 4 | `upgrade-insecure-requests` | `1` |
 | 5 | `user-agent` | `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ...` |
-| 6 | `accept` | `text/html,application/xhtml+xml,...` |
+| 6 | `accept` | `text/html,application/xhtml+xml,application/xml;q=0.9,image/jxl,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7` |
 | 7 | `sec-fetch-site` | `none` |
 | 8 | `sec-fetch-mode` | `navigate` |
 | 9 | `sec-fetch-user` | `?1` |

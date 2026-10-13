@@ -26,7 +26,7 @@ The practical upshot: describe, edit, load, describe, diff. The diff shows exact
 
 ## Use cases
 
-- **Spoof a Chrome version we haven't shipped yet.** Grab `chrome-latest`, override the User-Agent and sec-ch-ua brand list, register under your own name, such as `chrome-152-windows-preview`. Five minutes of work. Pick a name no built-in uses: registering over a shipped preset is rejected.
+- **Spoof a Chrome version we haven't shipped yet.** Grab `chrome-latest`, override the User-Agent and sec-ch-ua brand list, register under your own name, such as `chrome-156-windows-preview`. Five minutes of work. Pick a name no built-in uses: registering over a shipped preset is rejected.
 - **Pin a UA OS that doesn't match your runtime.** A Linux box can ship the `chrome-152-windows` UA without touching the TLS handshake.
 - **Remove or add a single TLS extension.** Override `tls.signature_algorithms` or `tls.alpn` without rebuilding the whole ClientHello.
 - **Tweak one HTTP/2 SETTINGS value.** Bump `initial_window_size`, leave everything else alone.
@@ -181,12 +181,14 @@ A complete `PresetFile` with everything resolved:
 {
   "version": 1,
   "preset": {
-    "name": "chrome-152-windows",
+    "name": "chrome-155-windows",
     "tls": {
-      "client_hello": "chrome-152-windows",
-      "psk_client_hello": "chrome-152-windows-psk",
+      "client_hello": "chrome-146-windows",
+      "psk_client_hello": "chrome-146-windows-psk",
       "quic_client_hello": "chrome-146-quic",
-      "quic_psk_client_hello": "chrome-146-quic-psk"
+      "quic_psk_client_hello": "chrome-146-quic-psk",
+      "signature_algorithms": [ ... ],
+      "trust_anchors": [ ... ]
     },
     "http2": {
       "header_table_size": 65536,
@@ -214,15 +216,15 @@ A complete `PresetFile` with everything resolved:
     },
     "http3": { ... },
     "headers": {
-      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
-      "values": { "sec-ch-ua": "\"Chromium\";v=\"148\", ...", ... },
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+      "values": { "sec-ch-ua": "\"Google Chrome\";v=\"155\", ...", ... },
       "order": [
         {"key": "sec-ch-ua", "value": "..."},
         {"key": "sec-ch-ua-mobile", "value": "?0"},
         ...
-      ]
+      ],
+      "image_accept": "image/jxl,image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
     },
-    "tcp": { "ttl": 128, "mss": 1460, "window_size": 64240, "window_scale": 8, "df_bit": true },
     "protocols": { "http3": true }
   }
 }
@@ -230,8 +232,8 @@ A complete `PresetFile` with everything resolved:
 
 Worth noting:
 
-- Inheritance is flattened. `chrome-152-windows` is internally based on `chrome-152-windows`, which is based on `chrome-152-windows`, but the describe output has no `based_on` field. Every value is emitted explicitly, so there's no chain to chase.
-- `tls.client_hello` says `chrome-152-windows`. That's the underlying utls ClientHelloID we use. TLS bytes haven't changed since Chrome 146 desktop; only the User-Agent and sec-ch-ua values have moved.
+- Inheritance is flattened. `chrome-155-windows` is internally based on `chrome-154-windows`, which is based on `chrome-153-windows`, and so on back to the Go-defined `chrome-146-windows`, but the describe output has no `based_on` field. Every value is emitted explicitly, so there's no chain to chase.
+- `tls.client_hello` says `chrome-146-windows`. That's the underlying utls ClientHelloID we use. Every later Chrome desktop preset builds on it, and the TLS changes since then sit on top as plain JSON fields: `signature_algorithms` (from 150), and `trust_anchors` (from 152, sorted from 154). Most versions in between only moved the User-Agent and sec-ch-ua values.
 - Every H2 SETTINGS value shows up, even the zero ones (`max_concurrent_streams: 0`, `max_frame_size: 0`). Zero means "don't emit this SETTINGS entry on the wire", and that information survives the round-trip.
 - The full RFC 7540 priority table lands under `http2.priority_table`. Chrome 147+ ships its real per-Sec-Fetch-Dest urgencies. Presets that opt out (Safari, iOS Chrome, iOS Safari) skip this block.
 
@@ -254,7 +256,7 @@ The dump-and-edit flow isn't the only option. A thin patch JSON listing only the
 }
 ```
 
-That's exactly what our embedded `chrome-152-windows.json` does: a 28-line patch on top of `chrome-152-windows`. Inheritance is recursive with a loop guard, so cycles get caught at load time.
+That's exactly what our embedded `chrome-151-windows.json` does: a 28-line patch on top of `chrome-150-windows`. Inheritance is recursive with a loop guard, so cycles get caught at load time.
 
 When to use which:
 

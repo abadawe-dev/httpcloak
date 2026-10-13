@@ -198,7 +198,7 @@ func (h *HeaderCoherence) ApplyToHeaders(
 What it does:
 
 - Writes `Sec-Fetch-Site`, `Sec-Fetch-Mode`, `Sec-Fetch-Dest`. Writes `Sec-Fetch-User: ?1` only on user-triggered navigation; deletes the key otherwise.
-- Rewrites `Accept` based on Mode and Dest. Navigation gets the long document string. CORS / same-origin gets `*/*`. No-CORS image gets `image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8`. No-CORS style gets `text/css,*/*;q=0.1`. No-CORS script falls back to `*/*`.
+- Rewrites `Accept` based on Mode and Dest. Navigation gets the long document string. CORS / same-origin gets `*/*`. No-CORS image gets the preset's image Accept: `image/jxl,image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8` on 155 and newer, and the same string without `image/jxl` on older presets. No-CORS style gets `text/css,*/*;q=0.1`. No-CORS script falls back to `*/*`.
 - Sets `Upgrade-Insecure-Requests: 1` for navigation; deletes it for everything else.
 - Deletes `Cache-Control` for non-navigation modes.
 - Sets `Referer` from `ctx.Referrer` when present.

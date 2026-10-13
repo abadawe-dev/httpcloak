@@ -7,7 +7,7 @@ sidebar_position: 2
 
 Every fingerprint preset that ships with httpcloak. Use this as the lookup when you need to know which preset produces which JA3, JA4, Akamai H2 hash, and User-Agent.
 
-The data comes from the registry in `fingerprint/presets.go`. Newer Chrome versions (147, 148) live in the embedded JSON registry at `fingerprint/embedded/*.json` and inherit from older presets via `based_on`.
+The data comes from the registry in `fingerprint/presets.go`. Newer Chrome versions (147 through 155) live in the embedded JSON registry at `fingerprint/embedded/*.json` and inherit from older presets via `based_on`.
 
 :::tip
 Want to see what a real browser sends right now? Hit [tls.peet.ws/api/all](https://tls.peet.ws/api/all). DevTools won't show you header order, so peet is your only source of truth there.
@@ -21,12 +21,12 @@ The `-latest` aliases point to the newest tracked version. They're not separate 
 
 | Alias | Resolves to |
 |---|---|
-| `chrome-latest` | `chrome-152` (auto-detects host OS) |
-| `chrome-latest-windows` | `chrome-152-windows` |
-| `chrome-latest-linux` | `chrome-152-linux` |
-| `chrome-latest-macos` | `chrome-152-macos` |
-| `chrome-latest-ios` | `chrome-152-ios` |
-| `chrome-latest-android` | `chrome-152-android` |
+| `chrome-latest` | `chrome-155` (auto-detects host OS) |
+| `chrome-latest-windows` | `chrome-155-windows` |
+| `chrome-latest-linux` | `chrome-155-linux` |
+| `chrome-latest-macos` | `chrome-155-macos` |
+| `chrome-latest-ios` | `chrome-152-ios` (stays behind on purpose; see below) |
+| `chrome-latest-android` | `chrome-155-android` |
 | `firefox-latest` | `firefox-148` |
 | `firefox-latest-windows` | `firefox-148-windows` |
 | `firefox-latest-linux` | `firefox-148-linux` |
@@ -34,25 +34,37 @@ The `-latest` aliases point to the newest tracked version. They're not separate 
 | `safari-latest` | `safari-18` |
 | `safari-latest-ios` | `safari-18-ios` |
 
-`chrome-latest-ios` tracks 152 like the rest. iOS Chrome spells its version out in
-full, including a build number that cannot be derived from the major version, so
-each iOS preset waits on a real capture rather than being generated; `chrome-152-ios`
-is built from two.
-| `ios-chrome-latest` | `chrome-148-ios` (back-compat naming) |
-| `ios-safari-latest` | `safari-18-ios` (back-compat naming) |
-| `android-chrome-latest` | `chrome-148-android` (back-compat naming) |
+`chrome-latest-ios` stays on 152 while everything else tracks 155. iOS Chrome spells
+its version out in full, including a build number that cannot be derived from the
+major version, so each iOS preset waits on a real capture rather than being generated.
+`chrome-152-ios` is built from two, and there is no `chrome-153-ios`, `chrome-154-ios`
+or `chrome-155-ios` yet.
 
-`chrome-152` with no platform suffix sniffs the running OS and dispatches to `chrome-152-windows`, `chrome-152-macos`, or `chrome-152-linux`. Pick this when the binary should match its host. Pick the explicit suffix when you want, say, a Windows fingerprint from a Linux scraper, which is the common case.
+The old-style names are kept for back-compat and follow the same targets:
+
+| Alias | Resolves to |
+|---|---|
+| `ios-chrome-latest` | `chrome-152-ios` |
+| `ios-safari-latest` | `safari-18-ios` |
+| `android-chrome-latest` | `chrome-155-android` |
+
+Version-pinned old-style names (`ios-chrome-NNN`, `android-chrome-NNN`) only exist for 143 through 148. For anything newer, use the `chrome-NNN-ios` / `chrome-NNN-android` spelling.
+
+`chrome-155` with no platform suffix sniffs the running OS and dispatches to `chrome-155-windows`, `chrome-155-macos`, or `chrome-155-linux`. Pick this when the binary should match its host. Pick the explicit suffix when you want, say, a Windows fingerprint from a Linux scraper, which is the common case.
 
 ---
 
 ## Captured hashes (verified against tls.peet.ws)
 
-Re-measured `2026-08-31` from the Linux build host. Everything shows H2 because the endpoint used does not advertise H3.
+Re-measured `2026-10-13` from the Linux build host for the Chrome 152 to 155 rows; the older rows are from `2026-08-31`. Everything shows H2 because the endpoint used does not advertise H3.
 
 | Preset | Protocol | JA3 hash | JA4 | Akamai HTTP/2 hash | PeetPrint |
 |---|---|---|---|---|---|
-| `chrome-latest` (resolves to `chrome-152-linux`) | h2 | rotates | `t13d1517h2_8daaf6152771_cb7bf5808d99` | `52d84b11737d980aef856699f885ca86` | `fc97c1cdfb1409c9a9326c1b726d1dee` |
+| `chrome-latest` (resolves to `chrome-155-linux`) | h2 | rotates | `t13d1517h2_8daaf6152771_cb7bf5808d99` | `52d84b11737d980aef856699f885ca86` | `fc97c1cdfb1409c9a9326c1b726d1dee` |
+| `chrome-155-windows` | h2 | rotates | `t13d1517h2_8daaf6152771_cb7bf5808d99` | `52d84b11737d980aef856699f885ca86` | `fc97c1cdfb1409c9a9326c1b726d1dee` |
+| `chrome-155-android` | h2 | rotates | `t13d1517h2_8daaf6152771_cb7bf5808d99` | `52d84b11737d980aef856699f885ca86` | `fc97c1cdfb1409c9a9326c1b726d1dee` |
+| `chrome-154-windows` | h2 | rotates | `t13d1517h2_8daaf6152771_cb7bf5808d99` | `52d84b11737d980aef856699f885ca86` | `fc97c1cdfb1409c9a9326c1b726d1dee` |
+| `chrome-153-windows` | h2 | rotates | `t13d1517h2_8daaf6152771_cb7bf5808d99` | `52d84b11737d980aef856699f885ca86` | `fc97c1cdfb1409c9a9326c1b726d1dee` |
 | `chrome-152-windows` | h2 | rotates | `t13d1517h2_8daaf6152771_cb7bf5808d99` | `52d84b11737d980aef856699f885ca86` | `fc97c1cdfb1409c9a9326c1b726d1dee` |
 | `chrome-149-windows` | h2 | rotates | `t13d1516h2_8daaf6152771_d8a2da3f94cd` | `52d84b11737d980aef856699f885ca86` | `1d4ffe9b0e34acac0bd883fa7f79d7b5` |
 | `chrome-148-windows` | h2 | rotates | `t13d1516h2_8daaf6152771_d8a2da3f94cd` | `52d84b11737d980aef856699f885ca86` | `1d4ffe9b0e34acac0bd883fa7f79d7b5` |
@@ -63,7 +75,7 @@ Re-measured `2026-08-31` from the Linux build host. Everything shows H2 because 
 Notes:
 
 - Every Chromium preset shows `rotates` for JA3 rather than a value, because it has no single value to show. Chrome permutes its ClientHello extensions on every handshake, so its JA3 differs connection to connection, and the presets reproduce that. Pinning one hash here would document a client that does not exist. JA4 is stable across those connections because it sorts the extension list before hashing, which is why it is the one worth comparing.
-- Chrome 152 moved its JA4 to `t13d1517h2_...` because it added an extension, taking the count from 16 to 17. Versions 143 through 149 shared a single JA4; 150 changed the tail by adding signature algorithms, and 151 kept it.
+- Chrome 152 moved its JA4 to `t13d1517h2_...` because it added an extension, taking the count from 16 to 17. Versions 143 through 149 shared a single JA4; 150 changed the tail by adding signature algorithms, and 151 kept it. 153, 154 and 155 measure the same as 152 on every hash above; 155 was also checked on Linux, macOS and Android and matched.
 - The Chrome 152 JA4 tail is only stable against a tool that discards greased values inside `signature_algorithms`, which the specification asks for but not every implementation does. Chrome 152 puts one at the head of that list per handshake, so an implementation that keeps it reports a different tail every connection, sixteen in all. Real Chrome does the same, so a moving tail is the profile working. The value above was measured against one that strips.
 - `safari-18` and `safari-18-ios` share JA4 + Akamai because the H2 stack is identical. The JA3 differs because of platform-specific ClientHello extensions.
 
@@ -73,10 +85,22 @@ For any preset not listed, run the same capture yourself. The static parts (UA, 
 
 ## Chrome desktop
 
-The Chrome desktop family. Versions 143 through 146 are Go-defined in `fingerprint/presets.go`. Versions 147 through 152 ship as JSON in `fingerprint/embedded/`, each inheriting from the one before it. Most bump only the User-Agent and the `sec-ch-ua` brand list; 150 and 152 also change the TLS layer, 150 by adding signature algorithms and 152 by adding the trust anchors extension and a greased signature algorithm.
+The Chrome desktop family. Versions 143 through 146 are Go-defined in `fingerprint/presets.go`. Versions 147 through 155 ship as JSON in `fingerprint/embedded/`, each inheriting from the one before it. Most bump only the User-Agent and the `sec-ch-ua` brand list; 150 and 152 also change the TLS layer, 150 by adding signature algorithms and 152 by adding the trust anchors extension and a greased signature algorithm. 154 keeps the same extensions but sends the trust anchor list sorted, on TCP and QUIC alike, where 152 and 153 send a fixed unsorted order on TCP and reshuffle it per connection on QUIC. 155 adds `image/jxl` to the `Accept` header, ahead of `image/avif`, on both document and image loads.
 
 | Preset | UA | `sec-ch-ua` | Notes |
 |---|---|---|---|
+| `chrome-155-windows` | `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36` | `"Google Chrome";v="155", "Chromium";v="155", "Not(A:Brand";v="24"` | Adds `image/jxl` to the document and image `Accept` headers. TLS inherited from 154. |
+| `chrome-155-linux` | `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36` | `"Google Chrome";v="155", "Chromium";v="155", "Not(A:Brand";v="24"` | As above. |
+| `chrome-155-macos` | `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36` | `"Google Chrome";v="155", "Chromium";v="155", "Not(A:Brand";v="24"` | As above. |
+| `chrome-155-android` | `Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36` | `"Google Chrome";v="155", "Chromium";v="155", "Not(A:Brand";v="24"` | As above, with `sec-ch-ua-mobile: ?1`. |
+| `chrome-154-windows` | `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36` | `"Chromium";v="154", "Google Chrome";v="154", "Not A(Brand";v="99"` | Trust anchor list sent sorted, and no longer reshuffled on QUIC. |
+| `chrome-154-linux` | `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36` | `"Chromium";v="154", "Google Chrome";v="154", "Not A(Brand";v="99"` | As above. |
+| `chrome-154-macos` | `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36` | `"Chromium";v="154", "Google Chrome";v="154", "Not A(Brand";v="99"` | As above. |
+| `chrome-154-android` | `Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36` | `"Chromium";v="154", "Google Chrome";v="154", "Not A(Brand";v="99"` | As above, with `sec-ch-ua-mobile: ?1`. |
+| `chrome-153-windows` | `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36` | `"Google Chrome";v="153", "Not_A Brand";v="8", "Chromium";v="153"` | Headers only. TLS inherited from 152. |
+| `chrome-153-linux` | `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36` | `"Google Chrome";v="153", "Not_A Brand";v="8", "Chromium";v="153"` | As above. |
+| `chrome-153-macos` | `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36` | `"Google Chrome";v="153", "Not_A Brand";v="8", "Chromium";v="153"` | As above. |
+| `chrome-153-android` | `Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36` | `"Google Chrome";v="153", "Not_A Brand";v="8", "Chromium";v="153"` | As above, with `sec-ch-ua-mobile: ?1`. |
 | `chrome-152-windows` | `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36` | `"Chromium";v="152", "Not?A_Brand";v="24", "Google Chrome";v="152"` | New wire shape: trust anchors, plus a greased signature algorithm on TCP. |
 | `chrome-152-linux` | `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36` | `"Chromium";v="152", "Not?A_Brand";v="24", "Google Chrome";v="152"` | As above. |
 | `chrome-152-macos` | `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36` | `"Chromium";v="152", "Not?A_Brand";v="24", "Google Chrome";v="152"` | As above. |
@@ -91,16 +115,16 @@ The Chrome desktop family. Versions 143 through 146 are Go-defined in `fingerpri
 | `chrome-147-windows` | `...Chrome/147.0.0.0 Safari/537.36` | `"Google Chrome";v="147", "Chromium";v="147", "Not.A/Brand";v="8"` | Inherits TLS from `chrome-146-windows`. |
 | `chrome-147-linux` | `...Chrome/147.0.0.0 Safari/537.36` | `"Google Chrome";v="147", "Chromium";v="147", "Not.A/Brand";v="8"` | Inherits TLS from `chrome-146-linux`. |
 | `chrome-147-macos` | `...Chrome/147.0.0.0 Safari/537.36` | `"Google Chrome";v="147", "Chromium";v="147", "Not.A/Brand";v="8"` | Inherits TLS from `chrome-146-macos`. |
-| `chrome-152-windows` | `...Chrome/146.0.0.0 Safari/537.36` | `"Google Chrome";v="146", "Chromium";v="146", "Not.A/Brand";v="8"` | Native Go preset. ClientHello: `HelloChrome_146_Windows`. |
-| `chrome-152-linux` | `...Chrome/146.0.0.0 Safari/537.36` | `"Google Chrome";v="146", "Chromium";v="146", "Not.A/Brand";v="8"` | Native Go preset. ClientHello: `HelloChrome_146_Linux`. |
-| `chrome-152-macos` | `...Chrome/146.0.0.0 Safari/537.36` | `"Google Chrome";v="146", "Chromium";v="146", "Not.A/Brand";v="8"` | Native Go preset. ClientHello: `HelloChrome_146_macOS`. |
+| `chrome-146-windows` | `...Chrome/146.0.0.0 Safari/537.36` | `"Google Chrome";v="146", "Chromium";v="146", "Not.A/Brand";v="8"` | Native Go preset. ClientHello: `HelloChrome_146_Windows`. |
+| `chrome-146-linux` | `...Chrome/146.0.0.0 Safari/537.36` | `"Google Chrome";v="146", "Chromium";v="146", "Not.A/Brand";v="8"` | Native Go preset. ClientHello: `HelloChrome_146_Linux`. |
+| `chrome-146-macos` | `...Chrome/146.0.0.0 Safari/537.36` | `"Google Chrome";v="146", "Chromium";v="146", "Not.A/Brand";v="8"` | Native Go preset. ClientHello: `HelloChrome_146_macOS`. |
 | `chrome-145-{windows,linux,macos}` | `...Chrome/145.0.0.0...` | matching brand list | Native Go preset, per-platform ClientHello. |
 | `chrome-144-{windows,linux,macos}` | `...Chrome/144.0.0.0...` | matching brand list | Native Go preset, per-platform ClientHello. |
 | `chrome-143-{windows,linux,macos}` | `...Chrome/143.0.0.0...` | matching brand list | Native Go preset, per-platform ClientHello. |
 | `chrome-141` | `...Chrome/141.0.0.0...` | matching brand list | Legacy preset, no per-OS variants, no QUIC fingerprint (H1/H2 only). |
 | `chrome-133` | `...Chrome/133.0.0.0...` | matching brand list | Legacy preset, no per-OS variants, no QUIC fingerprint (H1/H2 only). |
 
-The unsuffixed `chrome-152` / `chrome-152` / `chrome-152` / `chrome-152` / `chrome-152` / `chrome-144` / `chrome-143` resolve at runtime to whichever platform-suffixed variant matches the host OS. Pick the suffix when you want consistent results across machines.
+The unsuffixed names, `chrome-143` through `chrome-155`, resolve at runtime to whichever platform-suffixed variant matches the host OS. Pick the suffix when you want consistent results across machines.
 
 The 143-and-newer Chrome desktop line:
 
@@ -118,10 +142,10 @@ iOS Chrome is a WebKit wrapper, so its TLS fingerprint matches Safari iOS rather
 
 | Preset | UA | TLS | Notes |
 |---|---|---|---|
-| `chrome-152-ios` | `...CriOS/148.0.0.0 Mobile/15E148 Safari/604.1` | `HelloIOS_18` | Inherits from `chrome-152-ios`. |
-| `chrome-152-ios` | `...CriOS/147.0.0.0 Mobile/15E148 Safari/604.1` | `HelloIOS_18` | Inherits from `chrome-152-ios`. |
-| `chrome-152-ios` | `...CriOS/146.0.0.0 Mobile/15E148 Safari/604.1` | `HelloIOS_18` | Native Go preset. |
-| `chrome-152-ios` | `...CriOS/145.0.0.0...` | `HelloIOS_18` | Native Go preset. |
+| `chrome-148-ios` | `...CriOS/148.0.0.0 Mobile/15E148 Safari/604.1` | `HelloIOS_18` | Inherits from `chrome-146-ios`. |
+| `chrome-147-ios` | `...CriOS/147.0.0.0 Mobile/15E148 Safari/604.1` | `HelloIOS_18` | Inherits from `chrome-146-ios`. |
+| `chrome-146-ios` | `...CriOS/146.0.0.0 Mobile/15E148 Safari/604.1` | `HelloIOS_18` | Native Go preset. |
+| `chrome-145-ios` | `...CriOS/145.0.0.0...` | `HelloIOS_18` | Native Go preset. |
 | `chrome-144-ios` | `...CriOS/144.0.0.0...` | `HelloIOS_18` | Native Go preset. |
 | `chrome-143-ios` | `...CriOS/143.0.0.0...` | `HelloIOS_18` | Native Go preset. |
 
@@ -139,10 +163,10 @@ Android Chrome ships its own native TLS stack, so the fingerprint matches deskto
 
 | Preset | UA | TLS | Notes |
 |---|---|---|---|
-| `chrome-152-android` | `Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36` | `HelloChrome_<v>_Linux` | Inherits from `chrome-152-android`. |
-| `chrome-152-android` | `...Chrome/147.0.0.0 Mobile Safari/537.36` | `HelloChrome_<v>_Linux` | Inherits from `chrome-152-android`. |
-| `chrome-152-android` | `...Chrome/146.0.0.0 Mobile Safari/537.36` | `HelloChrome_146_Linux` | Native Go preset. |
-| `chrome-152-android` | `...Chrome/145.0.0.0...` | `HelloChrome_145_Linux` | Native Go preset. |
+| `chrome-148-android` | `Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36` | `HelloChrome_<v>_Linux` | Inherits from `chrome-147-android`. |
+| `chrome-147-android` | `...Chrome/147.0.0.0 Mobile Safari/537.36` | `HelloChrome_<v>_Linux` | Inherits from `chrome-146-android`. |
+| `chrome-146-android` | `...Chrome/146.0.0.0 Mobile Safari/537.36` | `HelloChrome_146_Linux` | Native Go preset. |
+| `chrome-145-android` | `...Chrome/145.0.0.0...` | `HelloChrome_145_Linux` | Native Go preset. |
 | `chrome-144-android` | `...Chrome/144.0.0.0...` | `HelloChrome_144_Linux` | Native Go preset. |
 | `chrome-143-android` | `...Chrome/143.0.0.0...` | `HelloChrome_143_Linux` | Native Go preset. |
 
@@ -222,7 +246,7 @@ Rough guide based on what you're aiming for:
 | Looking like a phone | `chrome-latest-android` or `safari-latest-ios` |
 | Sites that allowlist Firefox quirks (HPACK, TE: trailers) | `firefox-latest` |
 | Sites that block Chrome but pass Safari | `safari-latest` |
-| Pinning to a specific version for reproducibility | `chrome-152-windows` (no `-latest`) |
+| Pinning to a specific version for reproducibility | `chrome-155-windows` (no `-latest`) |
 
 For sites that fingerprint the TCP/IP stack (rare, but a few bot-management products do), pair the preset with `WithTCPFingerprint(...)` to spoof TTL, window size, and MSS.
 

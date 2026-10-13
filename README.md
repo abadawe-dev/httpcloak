@@ -825,7 +825,7 @@ httpcloak.options(url, **kwargs)
 
 # Session class
 session = httpcloak.Session(
-    preset="chrome-latest",       # Browser preset (default)
+    preset="chrome-latest",       # Browser preset (omit it and you get chrome-146)
     proxy="socks5://...",      # Proxy URL
     timeout=30,                # Timeout in seconds
     http_version="h3",         # Force protocol: h1, h2, h3, auto
@@ -1026,7 +1026,7 @@ response.Protocol
 
 | Browser | Versions | Platform suffixes | PQ | HTTP/3 |
 |---------|----------|-------------------|:--:|:------:|
-| Chrome | 143 to 152, `latest` | `-windows` `-linux` `-macos` `-android` `-ios` | yes | yes |
+| Chrome | 143 to 155, `latest` | `-windows` `-linux` `-macos` `-android` `-ios` (iOS up to 152) | yes | yes |
 | Chrome | 133, 141 | none | yes | no |
 | Firefox | 148, `latest` | `-windows` `-linux` `-macos` | yes | no |
 | Firefox | 133 | `-windows` `-linux` `-macos` | no | no |
@@ -1052,6 +1052,8 @@ Any field below is editable in the JSON spec produced by `describe_preset` (see 
 | `preset.http3` | HTTP/3 / QUIC parameters |
 | `preset.tcp` | TCP/IP fingerprint |
 | `preset.headers.values` / `preset.headers.order` | Header values and request order |
+| `preset.headers.image_accept` | `Accept` header for image loads (Chrome 155 added `image/jxl`) |
+| `preset.tls.trust_anchors` / `preset.tls.quic_trust_anchors_shuffle` | Trust anchor IDs, and whether QUIC reshuffles them per connection |
 
 Round-trip is byte-equal — `describe_preset` → mutate JSON → `load_preset_from_json` → run → `describe_preset` returns identical bytes.
 

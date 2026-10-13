@@ -76,7 +76,7 @@ new Session(options?: SessionOptions);
 
 ```ts
 {
-  preset?: string;             // "chrome-152" by default
+  preset?: string;             // "chrome-146" by default
   proxy?: string;
   tcpProxy?: string;
   udpProxy?: string;

@@ -67,7 +67,7 @@ The main class. Constructor signature (kwargs, all optional):
 
 ```python
 httpcloak.Session(
-    preset: str = "chrome-152",
+    preset: str = "chrome-146",
     proxy: Optional[str] = None,
     tcp_proxy: Optional[str] = None,
     udp_proxy: Optional[str] = None,
