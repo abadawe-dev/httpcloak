@@ -505,9 +505,12 @@ func (t *HTTP2Transport) getOrCreateConn(ctx context.Context, host, port, key st
 	// leader is set only inside the closure singleflight actually executes (the
 	// winner); coalesced waiters pass their own closures which never run, so their
 	// leader stays false. This lets a waiter recognise when it received the
-	// leader's result and react differently for connection-bearing errors.
+	// leader's result and react differently for connection-bearing errors. The
+	// closure runs on its own goroutine, and its write to leader happens before
+	// the result is sent on the channel, so reading leader after receiving is
+	// safe.
 	leader := false
-	v, err, _ := t.dialGroup.Do(key, func() (interface{}, error) {
+	ch := t.dialGroup.DoChan(key, func() (interface{}, error) {
 		leader = true
 		// A usable conn may have been published between our checks above and
 		// winning the singleflight slot.
@@ -560,6 +563,26 @@ func (t *HTTP2Transport) getOrCreateConn(ctx context.Context, host, port, key st
 		t.connsMu.Unlock()
 		return newConn, nil
 	})
+
+	// Every caller, the leader included, stops waiting when its own context
+	// ends. The dial itself runs detached and carries on for the others; a
+	// connection it opens is published to the pool, so nothing is lost. The one
+	// thing nobody would own is the live connection an ALPN downgrade hands to
+	// the leader, so a leader that leaves closes it once the dial returns.
+	var res singleflight.Result
+	select {
+	case res = <-ch:
+	case <-ctx.Done():
+		go func() {
+			r := <-ch
+			var alpnErr *ALPNMismatchError
+			if leader && errors.As(r.Err, &alpnErr) && alpnErr.TLSConn != nil {
+				alpnErr.TLSConn.Close()
+			}
+		}()
+		return nil, ctx.Err()
+	}
+	v, err := res.Val, res.Err
 	if err != nil {
 		// An ALPN downgrade returns a single live TLS connection carried inside
 		// the error, meant for ONE owner to serve over HTTP/1.1. singleflight

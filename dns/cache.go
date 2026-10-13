@@ -655,8 +655,12 @@ func FetchECHConfigs(ctx context.Context, hostname string) ([]byte, error) {
 
 	// Collapse concurrent dials to the same host into one DNS query — the others
 	// wait and share the result — so a burst of H3 connections doesn't fire N
-	// parallel HTTPS lookups (each up to ~1.5s where UDP/53 is filtered).
-	v, err, _ := echSF.Do(hostname, func() (interface{}, error) {
+	// parallel HTTPS lookups (each up to ~1.5s where UDP/53 is filtered). As in
+	// Lookup, each caller waits on its own ctx, so a cancelled dial stops
+	// waiting at once, and the shared query runs detached from the caller that
+	// started it, so that caller's cancellation cannot stop it moving on to the
+	// next server for the others.
+	ch := echSF.DoChan(hostname, func() (interface{}, error) {
 		// Re-check under the flight: another goroutine may have populated a fresh
 		// entry while we waited for the single-flight slot.
 		echCacheMu.RLock()
@@ -666,7 +670,9 @@ func FetchECHConfigs(ctx context.Context, hostname string) ([]byte, error) {
 			return e.ConfigList, nil
 		}
 
-		echConfigList, ttl, qerr := queryECHFromDNS(ctx, hostname)
+		queryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), resolveLookupTimeout)
+		defer cancel()
+		echConfigList, ttl, qerr := queryECHFromDNS(queryCtx, hostname)
 		if qerr != nil {
 			// On DNS failure (including all-servers-SERVFAIL, now surfaced as an
 			// error rather than a bogus success) serve the expired config only
@@ -688,6 +694,13 @@ func FetchECHConfigs(ctx context.Context, hostname string) ([]byte, error) {
 		})
 		return echConfigList, nil
 	})
+	var res singleflight.Result
+	select {
+	case res = <-ch:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	v, err := res.Val, res.Err
 	if err != nil {
 		return nil, nil // No ECH available is not an error
 	}
