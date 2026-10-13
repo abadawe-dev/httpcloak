@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -88,16 +89,21 @@ func (r *StreamResponse) Read(p []byte) (n int, err error) {
 // else the context is cancelled first, as before: an HTTP/1.1 body drains on
 // Close to keep the connection reusable, so closing an endless stream (SSE, a
 // long download) before cancelling it would block for good.
+//
+// The decompressor is closed after the body. A zstd decoder's Close waits for
+// its reader goroutine, which sits in a read of the body; on HTTP/2 nothing
+// has been cancelled yet at that point, so closing the decoder first hung
+// until the server sent more data, forever on an idle stream.
 func (r *StreamResponse) Close() error {
 	if r.Protocol != "h2" && r.cancel != nil {
 		r.cancel()
 	}
-	if r.decompressor != nil {
-		r.decompressor.Close()
-	}
 	var err error
 	if r.rawReader != nil {
 		err = r.rawReader.Close()
+	}
+	if r.decompressor != nil {
+		r.decompressor.Close()
 	}
 	if r.cancel != nil {
 		r.cancel() // a no-op after the first call
@@ -698,9 +704,10 @@ func setupStreamDecompressor(body io.ReadCloser, encoding string) (io.ReadCloser
 		// The decoder must be returned as the closer too. It runs goroutines
 		// until it is closed, and StreamResponse.Close closes only what comes
 		// back here, so with a nil closer a stream closed before its end left
-		// them running for good (#118). IOReadCloser's Close releases the
+		// them running for good (#118). The closer releases the
 		// decoder alone; the body is closed separately, as rawReader.
-		return &zstdStreamReader{decoder: decoder, body: body}, decoder.IOReadCloser()
+		z := &zstdStreamReader{decoder: decoder, body: body}
+		return z, zstdDecoderCloser{z}
 	default:
 		return body, nil
 	}
@@ -732,17 +739,40 @@ func (d *deflateStreamReader) Close() error {
 	return d.reader.Close()
 }
 
-// zstdStreamReader wraps zstd.Decoder to implement io.ReadCloser
+// zstdStreamReader wraps zstd.Decoder to implement io.ReadCloser.
+//
+// Decoder.Close must not run while a Read is inside the decoder, which a
+// stream closed from another goroutine (Lines, or a caller's own reader)
+// does, so Read and closeDecoder share a lock. A Read blocked on the network
+// holds it; closing the body first is what ends that Read.
 type zstdStreamReader struct {
+	mu      sync.Mutex
 	decoder *zstd.Decoder
 	body    io.ReadCloser
 }
 
 func (z *zstdStreamReader) Read(p []byte) (n int, err error) {
+	z.mu.Lock()
+	defer z.mu.Unlock()
 	return z.decoder.Read(p)
 }
 
-func (z *zstdStreamReader) Close() error {
+func (z *zstdStreamReader) closeDecoder() {
+	z.mu.Lock()
+	defer z.mu.Unlock()
 	z.decoder.Close()
-	return z.body.Close()
+}
+
+func (z *zstdStreamReader) Close() error {
+	err := z.body.Close()
+	z.closeDecoder()
+	return err
+}
+
+// zstdDecoderCloser closes a zstdStreamReader's decoder and not its body.
+type zstdDecoderCloser struct{ z *zstdStreamReader }
+
+func (c zstdDecoderCloser) Close() error {
+	c.z.closeDecoder()
+	return nil
 }

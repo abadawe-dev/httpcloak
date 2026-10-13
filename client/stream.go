@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/andybalholm/brotli"
@@ -49,10 +50,13 @@ func (r *StreamResponse) Close() error {
 	if r.cancel != nil {
 		r.cancel()
 	}
+	// The body before the decompressor: a zstd decoder's Close waits for a
+	// Read in progress, and closing the body is what ends that Read.
+	err := r.rawReader.Close()
 	if r.decompressor != nil {
 		r.decompressor.Close()
 	}
-	return r.rawReader.Close()
+	return err
 }
 
 // ReadAll reads the entire response body into memory
@@ -310,7 +314,7 @@ func setupDecompressor(body io.ReadCloser, encoding string) (io.ReadCloser, io.C
 		// Returned as the closer as well, so StreamResponse.Close releases the
 		// decoder's goroutines when a stream is closed early (#118). Its Close
 		// closes the decoder only; the body is closed separately.
-		reader := &zstdReadCloser{decoder}
+		reader := &zstdReadCloser{decoder: decoder}
 		return reader, reader
 	case "deflate":
 		// This case was missing, so a streamed deflate response came back
@@ -335,13 +339,24 @@ func (b *brotliReadCloser) Close() error {
 	return nil // brotli.Reader doesn't need closing
 }
 
-// zstdReadCloser wraps zstd.Decoder to implement io.ReadCloser
+// zstdReadCloser wraps zstd.Decoder to implement io.ReadCloser. Read and
+// Close share a lock because Decoder.Close must not run while a Read is in
+// the decoder, which a stream closed from another goroutine (Lines) does.
 type zstdReadCloser struct {
-	*zstd.Decoder
+	mu      sync.Mutex
+	decoder *zstd.Decoder
+}
+
+func (z *zstdReadCloser) Read(p []byte) (int, error) {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	return z.decoder.Read(p)
 }
 
 func (z *zstdReadCloser) Close() error {
-	z.Decoder.Close()
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	z.decoder.Close()
 	return nil
 }
 
