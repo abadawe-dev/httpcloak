@@ -20,8 +20,8 @@ type CookieJar struct {
 type CookieData struct {
 	Name      string
 	Value     string
-	Domain    string     // Normalized domain (with leading dot for domain cookies)
-	HostOnly  bool       // True if cookie should only be sent to exact host
+	Domain    string // Normalized domain (with leading dot for domain cookies)
+	HostOnly  bool   // True if cookie should only be sent to exact host
 	Path      string
 	Expires   *time.Time
 	MaxAge    int

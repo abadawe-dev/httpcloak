@@ -347,12 +347,12 @@ func (c *SOCKS5UDPConn) sendUDPAssociate() error {
 	// 2. The local UDP socket address (e.g., ::) may be rejected
 	// 3. Most proxies ignore this field anyway and accept from any address
 	request := []byte{
-		socks5Version,  // VER
+		socks5Version,   // VER
 		cmdUDPAssociate, // CMD
-		0x00,           // RSV
-		atypIPv4,       // ATYP: IPv4
-		0, 0, 0, 0,     // DST.ADDR: 0.0.0.0
-		0, 0,           // DST.PORT: 0
+		0x00,            // RSV
+		atypIPv4,        // ATYP: IPv4
+		0, 0, 0, 0,      // DST.ADDR: 0.0.0.0
+		0, 0, // DST.PORT: 0
 	}
 
 	if _, err := c.tcpConn.Write(request); err != nil {

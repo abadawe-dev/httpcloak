@@ -17,9 +17,9 @@ func TestBuildSOCKS5UDPHeader_IPv4(t *testing.T) {
 			addr: &net.UDPAddr{IP: net.ParseIP("1.2.3.4"), Port: 443},
 			expected: []byte{
 				0x00, 0x00, 0x00, // RSV + FRAG
-				0x01,             // ATYP: IPv4
-				1, 2, 3, 4,       // IP
-				0x01, 0xBB,       // Port 443 (big-endian)
+				0x01,       // ATYP: IPv4
+				1, 2, 3, 4, // IP
+				0x01, 0xBB, // Port 443 (big-endian)
 			},
 		},
 		{
@@ -75,7 +75,7 @@ func TestBuildSOCKS5UDPHeader_IPv6(t *testing.T) {
 			addr: &net.UDPAddr{IP: net.ParseIP("::1"), Port: 443},
 			expected: []byte{
 				0x00, 0x00, 0x00, // RSV + FRAG
-				0x04,             // ATYP: IPv6
+				0x04,                                           // ATYP: IPv6
 				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, // ::1
 				0x01, 0xBB, // Port 443
 			},
@@ -104,20 +104,20 @@ func TestBuildSOCKS5UDPHeader_IPv6(t *testing.T) {
 
 func TestParseSOCKS5UDPHeader_IPv4(t *testing.T) {
 	tests := []struct {
-		name        string
-		packet      []byte
-		wantOffset  int
-		wantIP      net.IP
-		wantPort    int
-		wantErr     bool
+		name       string
+		packet     []byte
+		wantOffset int
+		wantIP     net.IP
+		wantPort   int
+		wantErr    bool
 	}{
 		{
 			name: "valid IPv4",
 			packet: []byte{
 				0x00, 0x00, 0x00, // RSV + FRAG
-				0x01,             // ATYP: IPv4
-				1, 2, 3, 4,       // IP
-				0x01, 0xBB,       // Port 443
+				0x01,       // ATYP: IPv4
+				1, 2, 3, 4, // IP
+				0x01, 0xBB, // Port 443
 				'H', 'e', 'l', 'l', 'o', // Data
 			},
 			wantOffset: 10,
@@ -207,7 +207,7 @@ func TestParseSOCKS5UDPHeader_IPv6(t *testing.T) {
 			name: "valid IPv6",
 			packet: []byte{
 				0x00, 0x00, 0x00, // RSV + FRAG
-				0x04,             // ATYP: IPv6
+				0x04,                                           // ATYP: IPv6
 				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, // ::1
 				0x01, 0xBB, // Port 443
 				'D', 'a', 't', 'a', // Data
@@ -270,8 +270,8 @@ func TestParseSOCKS5UDPHeader_Domain(t *testing.T) {
 	// Test domain address type (ATYP = 0x03)
 	packet := []byte{
 		0x00, 0x00, 0x00, // RSV + FRAG
-		0x03,             // ATYP: Domain
-		11,               // Domain length
+		0x03, // ATYP: Domain
+		11,   // Domain length
 		'e', 'x', 'a', 'm', 'p', 'l', 'e', '.', 'c', 'o', 'm',
 		0x01, 0xBB, // Port 443
 		'D', 'a', 't', 'a',
@@ -354,13 +354,13 @@ func TestRoundTrip_HeaderBuildParse(t *testing.T) {
 
 func TestNewSOCKS5UDPConn(t *testing.T) {
 	tests := []struct {
-		name       string
-		proxyURL   string
-		wantHost   string
-		wantPort   string
-		wantUser   string
-		wantPass   string
-		wantErr    bool
+		name     string
+		proxyURL string
+		wantHost string
+		wantPort string
+		wantUser string
+		wantPass string
+		wantErr  bool
 	}{
 		{
 			name:     "simple socks5",

@@ -79,22 +79,22 @@ type Preset struct {
 	QUICClientHelloID    tls.ClientHelloID // For QUIC/HTTP/3 (different TLS extensions)
 	QUICPSKClientHelloID tls.ClientHelloID // For QUIC/HTTP/3 with PSK (session resumption)
 	UserAgent            string
-	Headers              map[string]string  // For backward compatibility
-	HeaderOrder          []HeaderPair       // Ordered headers for HTTP/2
+	Headers              map[string]string // For backward compatibility
+	HeaderOrder          []HeaderPair      // Ordered headers for HTTP/2
 
 	// ImageAccept is the Accept header Chrome sends on image loads. Empty
 	// means the pre-155 value; see ResolveImageAccept.
-	ImageAccept string
-	ClientHints          ClientHintsProfile // High-entropy UA client hint overrides; empty fields are derived from sec-ch-ua (see Preset.ResolveClientHints)
-	HTTP2Settings        HTTP2Settings
-	TCPFingerprint       TCPFingerprint
-	SupportHTTP3         bool
-	DisableHTTP2         bool                 // When true, auto mode skips HTTP/2 and goes straight to HTTP/1.1 (zero value = H2 enabled)
-	H2Config             *H2FingerprintConfig // nil = Chrome defaults for all H2 fingerprinting
-	H3Config             *H3FingerprintConfig // nil = Chrome defaults for all H3/QUIC fingerprinting
-	JA3                  string               // JA3 fingerprint string. When set, parsed fresh per connection instead of using ClientHelloID.
-	PSKJA3               string               // JA3 captured from a resuming connection (extension list contains 41). Empty = no JA3-mode resumption.
-	JA3Extras            *JA3Extras           // Supplements JA3 parsing. nil = Chrome defaults.
+	ImageAccept    string
+	ClientHints    ClientHintsProfile // High-entropy UA client hint overrides; empty fields are derived from sec-ch-ua (see Preset.ResolveClientHints)
+	HTTP2Settings  HTTP2Settings
+	TCPFingerprint TCPFingerprint
+	SupportHTTP3   bool
+	DisableHTTP2   bool                 // When true, auto mode skips HTTP/2 and goes straight to HTTP/1.1 (zero value = H2 enabled)
+	H2Config       *H2FingerprintConfig // nil = Chrome defaults for all H2 fingerprinting
+	H3Config       *H3FingerprintConfig // nil = Chrome defaults for all H3/QUIC fingerprinting
+	JA3            string               // JA3 fingerprint string. When set, parsed fresh per connection instead of using ClientHelloID.
+	PSKJA3         string               // JA3 captured from a resuming connection (extension list contains 41). Empty = no JA3-mode resumption.
+	JA3Extras      *JA3Extras           // Supplements JA3 parsing. nil = Chrome defaults.
 
 	// RawClientHello holds the DECODED bytes of a captured TLS ClientHello
 	// record, not a parsed spec. That is deliberate: uTLS ApplyPreset mutates
@@ -125,7 +125,7 @@ type Preset struct {
 	// parse risks placing it where the protocol does not allow, so the two are
 	// mutually exclusive by design rather than by accident.
 	RawPermuteExtensions bool
-	BasedOn           string // For custom presets: name of the parent preset (used by inheritance-loop detection). Empty for built-ins.
+	BasedOn              string // For custom presets: name of the parent preset (used by inheritance-loop detection). Empty for built-ins.
 
 	// SignatureAlgorithms, when non-empty, replaces the signature_algorithms
 	// extension emitted on TCP (HTTP/1.1 + HTTP/2), on top of whatever base spec
@@ -414,7 +414,7 @@ type HTTP2Settings struct {
 // When nil on a Preset, all getters return Chrome defaults. Individual nil/zero fields
 // also fall back to Chrome defaults, so you can override just the fields you need.
 type H2FingerprintConfig struct {
-	HPACKHeaderOrder    []string // HPACK wire encoding order. nil = Chrome 143 default.
+	HPACKHeaderOrder []string // HPACK wire encoding order. nil = Chrome 143 default.
 
 	// HPACKHeaderOrderSubresource is the order for every request that is not a
 	// top-level navigation. Chrome builds those through a different path and the
@@ -422,7 +422,7 @@ type H2FingerprintConfig struct {
 	// then the rest of the hint cluster. Nil means "use HPACKHeaderOrder for
 	// everything", which is what every non-Chromium preset wants.
 	HPACKHeaderOrderSubresource []string `json:"hpack_header_order_subresource,omitempty"`
-	HPACKIndexingPolicy string   // "chrome"/"never"/"always"/"default". "" = "chrome".
+	HPACKIndexingPolicy         string   // "chrome"/"never"/"always"/"default". "" = "chrome".
 	// DataFrameMaxSize caps the payload of a DATA frame this profile will send.
 	// nil means derive it from the client family; see H2DataFrameMaxSize.
 	DataFrameMaxSize *uint32

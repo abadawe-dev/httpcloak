@@ -1210,15 +1210,15 @@ func toResponse(resp *transport.Response) *Response {
 	}
 
 	return &Response{
-		StatusCode:  resp.StatusCode,
-		Headers:     resp.Headers,
-		HeaderOrder: resp.HeaderOrder,
-		Trailer:     resp.Trailer,
+		StatusCode:   resp.StatusCode,
+		Headers:      resp.Headers,
+		HeaderOrder:  resp.HeaderOrder,
+		Trailer:      resp.Trailer,
 		HeaderCasing: resp.HeaderCasing,
-		Body:        resp.Body,
-		FinalURL:    resp.FinalURL,
-		Protocol:    resp.Protocol,
-		History:     history,
+		Body:         resp.Body,
+		FinalURL:     resp.FinalURL,
+		Protocol:     resp.Protocol,
+		History:      history,
 	}
 }
 

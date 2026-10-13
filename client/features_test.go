@@ -301,11 +301,11 @@ func TestResponseHelpers(t *testing.T) {
 
 	// Test status helpers
 	tests := []struct {
-		code      int
-		isSuccess bool
+		code       int
+		isSuccess  bool
 		isRedirect bool
-		isClient  bool
-		isServer  bool
+		isClient   bool
+		isServer   bool
 	}{
 		{200, true, false, false, false},
 		{201, true, false, false, false},
@@ -648,7 +648,7 @@ type TLSFingerprint struct {
 	IP          string `json:"ip"`
 	HTTPVersion string `json:"http_version"`
 	TLS         struct {
-		Ciphers []string `json:"ciphers"`
+		Ciphers    []string `json:"ciphers"`
 		Extensions []struct {
 			Name string `json:"name"`
 		} `json:"extensions"`

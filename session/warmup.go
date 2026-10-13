@@ -16,7 +16,7 @@ import (
 type resourceType int
 
 const (
-	resourceCSS   resourceType = iota
+	resourceCSS resourceType = iota
 	resourceJS
 	resourceImage
 	resourceFont
@@ -24,8 +24,8 @@ const (
 
 // subresource is a URL discovered in the HTML with its type.
 type subresource struct {
-	url  string
-	typ  resourceType
+	url string
+	typ resourceType
 }
 
 // maxSubresources caps how many subresources we fetch.

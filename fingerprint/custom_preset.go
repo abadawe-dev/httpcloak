@@ -103,7 +103,7 @@ type TLSSpec struct {
 	// The list is a snapshot of a root store and moves independently of the
 	// browser version, so it lives here rather than in code. Empty means the
 	// extension is not sent.
-	TrustAnchors      []string `json:"trust_anchors,omitempty"`
+	TrustAnchors []string `json:"trust_anchors,omitempty"`
 
 	// QUICTrustAnchorsShuffle reshuffles the trust_anchors list on every QUIC
 	// connection, as Chrome 152 and 153 did. From 154 Chrome sorts the list and
@@ -111,9 +111,9 @@ type TLSSpec struct {
 	// through based_on unless set.
 	QUICTrustAnchorsShuffle *bool `json:"quic_trust_anchors_shuffle,omitempty"`
 
-	PermuteExtensions *bool    `json:"permute_extensions,omitempty"`
-	RecordSizeLimit   *uint16  `json:"record_size_limit,omitempty"`
-	KeyShareCurves    *int     `json:"key_share_curves,omitempty"` // number of curves to send key shares for; nil/0 = 1
+	PermuteExtensions *bool   `json:"permute_extensions,omitempty"`
+	RecordSizeLimit   *uint16 `json:"record_size_limit,omitempty"`
+	KeyShareCurves    *int    `json:"key_share_curves,omitempty"` // number of curves to send key shares for; nil/0 = 1
 }
 
 // JA3ExtrasSpec is the JSON representation of JA3Extras.
