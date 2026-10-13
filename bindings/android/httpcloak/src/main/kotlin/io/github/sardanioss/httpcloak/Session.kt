@@ -160,7 +160,14 @@ public class Session private constructor(handle: Long) : Closeable {
         val json = request.toJson(auth, timeoutMillis = false, inlineBody = true)
         val stream = Native.streamRequest(session, json)
         if (stream < 0) throw lastError(session)
-        return StreamResponse(stream, checkedObject(Native.streamGetMetadata(stream)))
+        try {
+            return StreamResponse(stream, checkedObject(Native.streamGetMetadata(stream)))
+        } catch (e: Throwable) {
+            // Nothing else holds the handle yet, so an error reading its
+            // metadata would leave the stream and its connection open.
+            Native.streamClose(stream)
+            throw e
+        }
     }
 
     /**
