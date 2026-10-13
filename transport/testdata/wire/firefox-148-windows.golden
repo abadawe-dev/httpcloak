@@ -105,23 +105,39 @@ HEADERS stream=3 flags=0x25 exclusive=false dep=0 weight=42
   indexed 65                                                   sec-fetch-user: ?1
   indexed 64                                                   priority: u=0, i
   indexed 63                                                   te: trailers
-HEADERS stream=5 flags=0x24 exclusive=false dep=0 weight=22
-  indexed 3                                                    :method: POST
-  incremental name=4 value-huffman=false                       :path: /c
+HEADERS stream=5 flags=0x25 exclusive=false dep=0 weight=42
+  indexed 2                                                    :method: GET
+  incremental name=4 value-huffman=true                        :path: /b?q=2
   indexed 75                                                   :authority: 127.0.0.1:PORT
   indexed 7                                                    :scheme: https
   indexed 74                                                   user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:148.0) Gecko/20100101 Firefox/148.0
+  indexed 73                                                   accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+  indexed 72                                                   accept-language: en-US,en;q=0.9
+  indexed 71                                                   accept-encoding: gzip, deflate, br, zstd
+  indexed 70                                                   upgrade-insecure-requests: 1
+  indexed 69                                                   sec-fetch-dest: document
+  indexed 68                                                   sec-fetch-mode: navigate
+  indexed 67                                                   sec-fetch-site: none
+  indexed 66                                                   sec-fetch-user: ?1
+  indexed 65                                                   priority: u=0, i
+  indexed 64                                                   te: trailers
+HEADERS stream=7 flags=0x24 exclusive=false dep=0 weight=22
+  indexed 3                                                    :method: POST
+  incremental name=4 value-huffman=false                       :path: /c
+  indexed 76                                                   :authority: 127.0.0.1:PORT
+  indexed 7                                                    :scheme: https
+  indexed 75                                                   user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:148.0) Gecko/20100101 Firefox/148.0
   incremental name=19 value-huffman=false                      accept: */*
-  indexed 73                                                   accept-language: en-US,en;q=0.9
-  indexed 72                                                   accept-encoding: gzip, deflate, br, zstd
-  incremental name=70 value-huffman=true                       sec-fetch-dest: empty
-  incremental name=70 value-huffman=true                       sec-fetch-mode: cors
-  incremental name=70 value-huffman=true                       sec-fetch-site: cross-site
-  incremental name=69 value-huffman=false                      priority: u=4
-  indexed 69                                                   te: trailers
+  indexed 74                                                   accept-language: en-US,en;q=0.9
+  indexed 73                                                   accept-encoding: gzip, deflate, br, zstd
+  incremental name=71 value-huffman=true                       sec-fetch-dest: empty
+  incremental name=71 value-huffman=true                       sec-fetch-mode: cors
+  incremental name=71 value-huffman=true                       sec-fetch-site: cross-site
+  incremental name=70 value-huffman=false                      priority: u=4
+  indexed 70                                                   te: trailers
   incremental name=31 value-huffman=true                       content-type: application/json
   incremental name=28 value-huffman=false                      content-length: 7
-DATA stream=5 flags=0x1 len=7
+DATA stream=7 flags=0x1 len=7
 
 ## http/1.1
 --- request on connection 1
@@ -141,6 +157,21 @@ Priority: u=0, i
 Te: trailers
 --- request on connection 1
 GET /b?q=1 HTTP/1.1
+Host: 127.0.0.1:PORT
+Connection: keep-alive
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:148.0) Gecko/20100101 Firefox/148.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.9
+Accept-Encoding: gzip, deflate, br, zstd
+Upgrade-Insecure-Requests: 1
+Sec-Fetch-Dest: document
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Site: none
+Sec-Fetch-User: ?1
+Priority: u=0, i
+Te: trailers
+--- request on connection 1
+GET /b?q=2 HTTP/1.1
 Host: 127.0.0.1:PORT
 Connection: keep-alive
 User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:148.0) Gecko/20100101 Firefox/148.0

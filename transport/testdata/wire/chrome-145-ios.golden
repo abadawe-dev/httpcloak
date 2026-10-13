@@ -93,21 +93,34 @@ HEADERS stream=3 flags=0x25 exclusive=false dep=0 weight=255
   indexed 65                                                   accept-language: en-US,en;q=0.9
   indexed 64                                                   accept-encoding: gzip, deflate, br
   indexed 63                                                   user-agent: Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/145.0.6917.0 Mobile/15E148 Safari/604.1
-HEADERS stream=5 flags=0x24 exclusive=false dep=0 weight=255
+HEADERS stream=5 flags=0x25 exclusive=false dep=0 weight=255
+  indexed 2                                                    :method: GET
+  indexed 7                                                    :scheme: https
+  incremental name=4 value-huffman=true                        :path: /b?q=2
+  indexed 72                                                   :authority: 127.0.0.1:PORT
+  indexed 71                                                   accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+  indexed 70                                                   sec-fetch-dest: document
+  indexed 69                                                   sec-fetch-mode: navigate
+  indexed 68                                                   sec-fetch-site: none
+  indexed 67                                                   sec-fetch-user: ?1
+  indexed 66                                                   accept-language: en-US,en;q=0.9
+  indexed 65                                                   accept-encoding: gzip, deflate, br
+  indexed 64                                                   user-agent: Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/145.0.6917.0 Mobile/15E148 Safari/604.1
+HEADERS stream=7 flags=0x24 exclusive=false dep=0 weight=255
   indexed 3                                                    :method: POST
   indexed 7                                                    :scheme: https
   incremental name=4 value-huffman=false                       :path: /c
-  indexed 72                                                   :authority: 127.0.0.1:PORT
+  indexed 73                                                   :authority: 127.0.0.1:PORT
   incremental name=19 value-huffman=false                      accept: */*
-  incremental name=71 value-huffman=true                       sec-fetch-dest: empty
-  incremental name=71 value-huffman=true                       sec-fetch-mode: cors
-  incremental name=71 value-huffman=true                       sec-fetch-site: cross-site
-  indexed 70                                                   accept-language: en-US,en;q=0.9
-  indexed 69                                                   accept-encoding: gzip, deflate, br
-  indexed 68                                                   user-agent: Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/145.0.6917.0 Mobile/15E148 Safari/604.1
+  incremental name=72 value-huffman=true                       sec-fetch-dest: empty
+  incremental name=72 value-huffman=true                       sec-fetch-mode: cors
+  incremental name=72 value-huffman=true                       sec-fetch-site: cross-site
+  indexed 71                                                   accept-language: en-US,en;q=0.9
+  indexed 70                                                   accept-encoding: gzip, deflate, br
+  indexed 69                                                   user-agent: Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/145.0.6917.0 Mobile/15E148 Safari/604.1
   incremental name=31 value-huffman=true                       content-type: application/json
   incremental name=28 value-huffman=false                      content-length: 7
-DATA stream=5 flags=0x1 len=7
+DATA stream=7 flags=0x1 len=7
 
 ## http/1.1
 --- request on connection 1
@@ -124,6 +137,18 @@ Accept-Encoding: gzip, deflate, br
 User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/145.0.6917.0 Mobile/15E148 Safari/604.1
 --- request on connection 1
 GET /b?q=1 HTTP/1.1
+Host: 127.0.0.1:PORT
+Connection: keep-alive
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Sec-Fetch-Dest: document
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Site: none
+Sec-Fetch-User: ?1
+Accept-Language: en-US,en;q=0.9
+Accept-Encoding: gzip, deflate, br
+User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/145.0.6917.0 Mobile/15E148 Safari/604.1
+--- request on connection 1
+GET /b?q=2 HTTP/1.1
 Host: 127.0.0.1:PORT
 Connection: keep-alive
 Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
@@ -205,6 +230,21 @@ HEADERS
   indexed static=true 31
   literal name-ref static=true 95 never=false huffman=true "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/145.0.6917.0 Mobile/15E148 Safari/604.1"
 --- request stream 8
+HEADERS
+  required-insert-count=0 base-sign=false delta-base=0
+  indexed static=true 17
+  indexed static=true 23
+  literal name-ref static=true 1 never=false huffman=true "/b?q=2"
+  literal name-ref static=true 0 never=false huffman=true "127.0.0.1:PORT"
+  literal name-ref static=true 29 never=false huffman=true "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+  literal name="sec-fetch-dest" name-huffman=true never=false huffman=true "document"
+  literal name="sec-fetch-mode" name-huffman=true never=false huffman=true "navigate"
+  literal name="sec-fetch-site" name-huffman=true never=false huffman=true "none"
+  literal name="sec-fetch-user" name-huffman=true never=false huffman=true "?1"
+  literal name-ref static=true 72 never=false huffman=true "en-US,en;q=0.9"
+  indexed static=true 31
+  literal name-ref static=true 95 never=false huffman=true "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/145.0.6917.0 Mobile/15E148 Safari/604.1"
+--- request stream 12
 HEADERS
   required-insert-count=0 base-sign=false delta-base=0
   indexed static=true 20

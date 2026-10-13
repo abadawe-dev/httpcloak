@@ -829,12 +829,16 @@ func captureH2(t *testing.T, name string, cert tls.Certificate) string {
 // JSON POST on one transport, so connection reuse and the dynamic tables are
 // part of what is recorded.
 // wireRequestCount is how many requests wireRequests sends.
-const wireRequestCount = 3
+const wireRequestCount = 4
 
 func wireRequests(t *testing.T, tr *Transport, base string) {
 	reqs := []*Request{
 		{Method: "GET", URL: base + "/a"},
 		{Method: "GET", URL: base + "/b?q=1"},
+		// Same shape as the one before it, so the HTTP/2 header plan cache
+		// replays a cached resolution here instead of building one; without
+		// a repeated shape the snapshot never runs that path.
+		{Method: "GET", URL: base + "/b?q=2"},
 		{Method: "POST", URL: base + "/c", Body: []byte(`{"k":1}`),
 			Headers: map[string][]string{"Content-Type": {"application/json"}}},
 	}

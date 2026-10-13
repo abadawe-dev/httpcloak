@@ -114,7 +114,25 @@ HEADERS stream=3 flags=0x25 exclusive=true dep=0 weight=256
   indexed 64                                                   accept-encoding: gzip, deflate, br, zstd
   indexed 63                                                   accept-language: en-US,en;q=0.9
   indexed 62                                                   priority: u=0, i
-HEADERS stream=5 flags=0x24 exclusive=true dep=0 weight=220
+HEADERS stream=5 flags=0x25 exclusive=true dep=0 weight=256
+  indexed 2                                                    :method: GET
+  indexed 75                                                   :authority: 127.0.0.1:PORT
+  indexed 7                                                    :scheme: https
+  without-indexing name=4 value-huffman=true                   :path: /b?q=2
+  indexed 74                                                   sec-ch-ua: "Google Chrome";v="155", "Chromium";v="155", "Not(A:Brand";v="24"
+  indexed 73                                                   sec-ch-ua-mobile: ?1
+  indexed 72                                                   sec-ch-ua-platform: "Android"
+  indexed 71                                                   upgrade-insecure-requests: 1
+  indexed 70                                                   user-agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36
+  indexed 69                                                   accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/jxl,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+  indexed 68                                                   sec-fetch-site: none
+  indexed 67                                                   sec-fetch-mode: navigate
+  indexed 66                                                   sec-fetch-user: ?1
+  indexed 65                                                   sec-fetch-dest: document
+  indexed 64                                                   accept-encoding: gzip, deflate, br, zstd
+  indexed 63                                                   accept-language: en-US,en;q=0.9
+  indexed 62                                                   priority: u=0, i
+HEADERS stream=7 flags=0x24 exclusive=true dep=0 weight=220
   indexed 3                                                    :method: POST
   indexed 75                                                   :authority: 127.0.0.1:PORT
   indexed 7                                                    :scheme: https
@@ -132,7 +150,7 @@ HEADERS stream=5 flags=0x24 exclusive=true dep=0 weight=220
   indexed 70                                                   accept-encoding: gzip, deflate, br, zstd
   indexed 69                                                   accept-language: en-US,en;q=0.9
   incremental name=68 value-huffman=true                       priority: u=1, i
-DATA stream=5 flags=0x1 len=7
+DATA stream=7 flags=0x1 len=7
 
 ## http/1.1
 --- request on connection 1
@@ -153,6 +171,22 @@ Accept-Encoding: gzip, deflate, br, zstd
 Accept-Language: en-US,en;q=0.9
 --- request on connection 1
 GET /b?q=1 HTTP/1.1
+Host: 127.0.0.1:PORT
+Connection: keep-alive
+sec-ch-ua: "Google Chrome";v="155", "Chromium";v="155", "Not(A:Brand";v="24"
+sec-ch-ua-mobile: ?1
+sec-ch-ua-platform: "Android"
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/jxl,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Sec-Fetch-Site: none
+Sec-Fetch-Mode: navigate
+Sec-Fetch-User: ?1
+Sec-Fetch-Dest: document
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: en-US,en;q=0.9
+--- request on connection 1
+GET /b?q=2 HTTP/1.1
 Host: 127.0.0.1:PORT
 Connection: keep-alive
 sec-ch-ua: "Google Chrome";v="155", "Chromium";v="155", "Not(A:Brand";v="24"
@@ -212,7 +246,8 @@ control SETTINGS 0x1=65536 0x6=262144 0x7=100 0x33=1 GREASE
 control GREASE frame
 control PRIORITY_UPDATE 0xf0700 element=0 "u=0, i"
 control PRIORITY_UPDATE 0xf0700 element=4 "u=0, i"
-control PRIORITY_UPDATE 0xf0700 element=8 "u=1, i"
+control PRIORITY_UPDATE 0xf0700 element=8 "u=0, i"
+control PRIORITY_UPDATE 0xf0700 element=12 "u=1, i"
 --- request stream 0
 HEADERS
   required-insert-count=0 base-sign=false delta-base=0
@@ -254,6 +289,26 @@ HEADERS
   literal name-ref static=true 72 never=false huffman=true "en-US,en;q=0.9"
   literal name="priority" name-huffman=true never=false huffman=true "u=0, i"
 --- request stream 8
+HEADERS
+  required-insert-count=0 base-sign=false delta-base=0
+  indexed static=true 17
+  literal name-ref static=true 0 never=false huffman=true "127.0.0.1:PORT"
+  indexed static=true 23
+  literal name-ref static=true 1 never=false huffman=true "/b?q=2"
+  literal name="sec-ch-ua" name-huffman=true never=false huffman=true "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\""
+  literal name="sec-ch-ua-mobile" name-huffman=true never=false huffman=true "?1"
+  literal name="sec-ch-ua-platform" name-huffman=true never=false huffman=true "\"Android\""
+  indexed static=true 94
+  literal name-ref static=true 95 never=false huffman=true "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36"
+  literal name-ref static=true 29 never=false huffman=true "text/html,application/xhtml+xml,application/xml;q=0.9,image/jxl,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+  literal name="sec-fetch-site" name-huffman=true never=false huffman=true "none"
+  literal name="sec-fetch-mode" name-huffman=true never=false huffman=true "navigate"
+  literal name="sec-fetch-user" name-huffman=true never=false huffman=true "?1"
+  literal name="sec-fetch-dest" name-huffman=true never=false huffman=true "document"
+  literal name-ref static=true 31 never=false huffman=true "gzip, deflate, br, zstd"
+  literal name-ref static=true 72 never=false huffman=true "en-US,en;q=0.9"
+  literal name="priority" name-huffman=true never=false huffman=true "u=0, i"
+--- request stream 12
 HEADERS
   required-insert-count=0 base-sign=false delta-base=0
   indexed static=true 20
