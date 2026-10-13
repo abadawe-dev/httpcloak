@@ -1586,7 +1586,11 @@ func (t *Transport) doAuto(ctx context.Context, req *Request) (*Response, error)
 			if errors.As(err, &alpnErr) {
 				return t.doHTTP1WithTLSConn(ctx, req, alpnErr)
 			}
-			// H2 failed for other reason, try H1 with new connection
+			// H2 failed for another reason: try H1 on a new connection, if
+			// that cannot send the request a second time.
+			if !canResendOnAnotherProtocol(req, err) {
+				return nil, err
+			}
 			return t.doHTTP1(ctx, req)
 		case ProtocolHTTP1:
 			return t.doHTTP1(ctx, req)
@@ -1606,6 +1610,10 @@ func (t *Transport) doAuto(ctx context.Context, req *Request) (*Response, error)
 		return resp, err
 	}
 
+	// The H3/H2 or H2 attempt's error, for deciding whether the HTTP/1.1
+	// fallback below may run.
+	var failed error
+
 	// Race HTTP/3 and HTTP/2 in parallel if H3 is supported
 	if snap.preset.SupportHTTP3 && snap.h3 != nil {
 		resp, protocol, err := t.raceH3H2(ctx, req)
@@ -1615,6 +1623,7 @@ func (t *Transport) doAuto(ctx context.Context, req *Request) (*Response, error)
 			t.protocolSupportMu.Unlock()
 			return resp, nil
 		}
+		failed = err
 		// ALPN mismatch, from the probe or from the H2 attempt: serve HTTP/1.1
 		// on the connection that negotiated it. Not retried on failure, exactly
 		// like the branch below.
@@ -1638,6 +1647,7 @@ func (t *Transport) doAuto(ctx context.Context, req *Request) (*Response, error)
 			t.protocolSupportMu.Unlock()
 			return resp, nil
 		}
+		failed = err
 		// Check if ALPN mismatch - reuse connection for H1
 		var alpnErr *ALPNMismatchError
 		if errors.As(err, &alpnErr) {
@@ -1664,11 +1674,40 @@ func (t *Transport) doAuto(ctx context.Context, req *Request) (*Response, error)
 	// request, and the fingerprint with them. Leaving the host uncached costs
 	// nothing on the next request beyond re-attempting H2, which is exactly what
 	// should happen; if that succeeds the host is cached as H2.
+	//
+	// It only runs when it cannot send the request twice: either nothing of
+	// the first attempt reached the server, or the request is idempotent and
+	// its body can be sent again. Otherwise the first attempt's error is the
+	// answer, as it is in Chrome, which does not resend a POST over another
+	// protocol after a stream error.
+	if failed != nil && !canResendOnAnotherProtocol(req, failed) {
+		return nil, failed
+	}
 	resp, err := t.doHTTP1(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 	return resp, nil
+}
+
+// canResendOnAnotherProtocol reports whether a request whose attempt on one
+// protocol failed with err may be sent again on another, on a fresh
+// connection. That is safe when nothing of the first attempt was sent, or when
+// the request is idempotent (RFC 9110 section 9.2.2) and its body is held in
+// memory: a body read from a stream was consumed by the first attempt, and
+// resending it would send it empty.
+func canResendOnAnotherProtocol(req *Request, err error) bool {
+	if requestNotSent(err) {
+		return true
+	}
+	if req.BodyReader != nil {
+		return false
+	}
+	switch strings.ToUpper(req.Method) {
+	case "", "GET", "HEAD", "OPTIONS", "TRACE", "PUT", "DELETE":
+		return true
+	}
+	return false
 }
 
 // connectResult holds the result of a connection race
@@ -1893,7 +1932,8 @@ func (t *Transport) raceH3H2(ctx context.Context, req *Request) (*Response, Prot
 	// whichever protocol established first.
 	decision := t.raceConnectProtocol(ctx, host, port)
 	if decision.err != nil {
-		return nil, ProtocolHTTP2, decision.err
+		// Neither protocol connected, so nothing was sent.
+		return nil, ProtocolHTTP2, markNotSent(decision.err)
 	}
 	if decision.alpnErr != nil {
 		// ALPN negotiated HTTP/1.1 instead of H2. Hand the live connection back
@@ -2205,8 +2245,11 @@ func (t *Transport) doHTTP2(ctx context.Context, req *Request) (*Response, error
 	reqStart := time.Now()
 
 	// Make request
-	resp, err := snap.h2.RoundTrip(httpReq)
+	resp, sent, err := snap.h2.roundTrip(httpReq)
 	if err != nil {
+		if !sent {
+			err = markNotSent(err)
+		}
 		return nil, WrapError("roundtrip", host, port, "h2", err)
 	}
 	defer resp.Body.Close()

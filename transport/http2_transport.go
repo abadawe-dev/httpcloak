@@ -349,10 +349,18 @@ func connClosing(c *persistentConn) bool {
 
 // RoundTrip implements http.RoundTripper
 func (t *HTTP2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, _, err := t.roundTrip(req)
+	return resp, err
+}
+
+// roundTrip is RoundTrip, also saying whether any of the request may have
+// reached the server. sent is false only when no connection could be had for
+// the first attempt, so nothing was written.
+func (t *HTTP2Transport) roundTrip(req *http.Request) (resp *http.Response, sent bool, err error) {
 	t.connsMu.RLock()
 	if t.closed {
 		t.connsMu.RUnlock()
-		return nil, fmt.Errorf("http2: transport closed")
+		return nil, false, fmt.Errorf("http2: transport closed")
 	}
 	t.connsMu.RUnlock()
 
@@ -368,7 +376,7 @@ func (t *HTTP2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Try to get existing connection (pass request host for SNI, connectHost used internally for DNS)
 	conn, err := t.getOrCreateConn(req.Context(), host, port, key)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	// Mark conn as in-use so cleanup() doesn't close it mid-flight
@@ -378,7 +386,7 @@ func (t *HTTP2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	conn.mu.Unlock()
 
 	// Make request
-	resp, err := conn.h2Conn.RoundTrip(req)
+	resp, err = conn.h2Conn.RoundTrip(req)
 	for attempt := 0; err != nil; attempt++ {
 		// release(), not a bare decrement: if this conn was evicted while the
 		// request was in flight its close was deferred, and only release()
@@ -395,12 +403,12 @@ func (t *HTTP2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 		// Don't retry if context is already done (e.g. timeout expired)
 		if req.Context().Err() != nil {
-			return nil, req.Context().Err()
+			return nil, true, req.Context().Err()
 		}
 
 		// Chrome's budget: kMaxRetryAttempts in http_network_transaction.cc.
 		if attempt == maxHTTP2Retries {
-			return nil, err
+			return nil, true, err
 		}
 
 		// Ask whether this is a failure worth replaying, and get the request
@@ -423,13 +431,13 @@ func (t *HTTP2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		// errors a server chooses to send.
 		retryReq, retryErr := retryableHTTP2Request(req, err)
 		if retryErr != nil || retryReq == nil {
-			return nil, err
+			return nil, true, err
 		}
 		req = retryReq
 
 		conn, err = t.getOrCreateConn(req.Context(), host, port, key)
 		if err != nil {
-			return nil, err
+			return nil, true, err
 		}
 
 		conn.mu.Lock()
@@ -454,7 +462,7 @@ func (t *HTTP2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		resp.Body = &connBodyGuard{ReadCloser: resp.Body, conn: conn}
 	}
 
-	return resp, nil
+	return resp, true, nil
 }
 
 // getOrCreateConn gets an existing connection or creates a new one.

@@ -201,6 +201,30 @@ func NewRequestError(op, host, port, protocol string, cause error) *TransportErr
 	}
 }
 
+// requestNotSentError marks a failure that happened before any part of the
+// request reached the server: no connection could be had for it. Only such a
+// failure is safe to retry on another protocol whatever the method and body;
+// once a request may have been sent, resending it can repeat a payment or
+// send a body that was already consumed.
+type requestNotSentError struct{ err error }
+
+func (e *requestNotSentError) Error() string { return e.err.Error() }
+func (e *requestNotSentError) Unwrap() error { return e.err }
+
+func markNotSent(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &requestNotSentError{err: err}
+}
+
+// requestNotSent reports whether err says the request never reached the
+// server.
+func requestNotSent(err error) bool {
+	var ns *requestNotSentError
+	return errors.As(err, &ns)
+}
+
 // WrapError wraps an error with transport context
 func WrapError(op, host, port, protocol string, cause error) error {
 	if cause == nil {
@@ -213,9 +237,14 @@ func WrapError(op, host, port, protocol string, cause error) error {
 		return cause
 	}
 
-	// Categorize the error
-	category := categorizeError(cause)
-	retryable := isRetryableError(cause)
+	// Categorize the error. The not-sent marker carries no meaning of its own
+	// and the checks below look at concrete types, so look through it.
+	inner := cause
+	if ns, ok := cause.(*requestNotSentError); ok {
+		inner = ns.err
+	}
+	category := categorizeError(inner)
+	retryable := isRetryableError(inner)
 
 	return &TransportError{
 		Op:        op,

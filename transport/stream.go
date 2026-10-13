@@ -282,10 +282,11 @@ func (t *Transport) doStreamAuto(ctx context.Context, req *Request) (*StreamResp
 			if err == nil {
 				return resp, nil
 			}
-			if req.BodyReader != nil {
+			if !canResendOnAnotherProtocol(req, err) {
 				// A one-shot BodyReader may have been partially drained by the
-				// H3 attempt; re-sending it on H2 would corrupt the body. Surface
-				// the H3 error instead of silently sending a truncated request.
+				// H3 attempt, and a request that is not idempotent may already
+				// have reached the server. Surface the H3 error instead of
+				// sending a truncated or duplicate request.
 				return nil, err
 			}
 			return t.doStreamHTTP2OrHTTP1(ctx, req)
@@ -332,11 +333,12 @@ func (t *Transport) doStreamAuto(ctx context.Context, req *Request) (*StreamResp
 				t.cacheProtocol(host, ProtocolHTTP3)
 				return resp, nil
 			}
-			if req.BodyReader != nil {
-				// One-shot body may be drained; do not re-send on H2 (see above).
+			if !canResendOnAnotherProtocol(req, err) {
+				// Drained body or a possible duplicate; do not re-send on H2
+				// (see above).
 				return nil, err
 			}
-			// Replayable body (or none): fall through to H2.
+			// Safe to send again: fall through to H2.
 		}
 	}
 
