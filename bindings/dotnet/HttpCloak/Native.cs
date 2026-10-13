@@ -258,6 +258,12 @@ internal static class Native
     [DllImport(LibraryName, EntryPoint = "httpcloak_stream_read", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr StreamRead(long streamHandle, long bufferSize);
 
+    [DllImport(LibraryName, EntryPoint = "httpcloak_stream_trailer", CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr StreamTrailer(long streamHandle);
+
+    [DllImport(LibraryName, EntryPoint = "httpcloak_last_error", CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr LastError(long sessionHandle);
+
     [DllImport(LibraryName, EntryPoint = "httpcloak_stream_close", CallingConvention = CallingConvention.Cdecl)]
     public static extern void StreamClose(long streamHandle);
 

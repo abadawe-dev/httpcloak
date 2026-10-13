@@ -89,6 +89,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **An async stream nobody receives is closed**: when a caller cancelled `httpcloak_stream_request_async` by unregistering its callback just as the response arrived, the stream handle was never delivered, and the stream held its connection until its timeout. The library now closes a stream whose result it could not deliver.
 
+- **Failed requests in the Node.js, .NET and Python bindings now say why**: the Node.js and .NET sync, streaming and fast-path methods, and the Python streaming methods, threw a fixed `Request failed` or `Failed to start streaming request` whatever went wrong, though the library had recorded the reason. They now carry it, a refused connection or a failed DNS lookup for example, and fall back to the old text only when there is none.
+
+- **Streamed responses in Node.js and .NET can read their trailers**: 1.7.1 gave streamed responses a `trailer()` method, so a gRPC caller could read its status, but only the Python binding got one. Node.js now has `StreamResponse.trailer()` and .NET `StreamResponse.GetTrailer()`, which behave the same way: call it once the body has been read to the end.
+
 ## [1.7.2] - 2026-09-03
 
 Worth taking if you use HTTP/3 with a custom fingerprint. A preset built from a

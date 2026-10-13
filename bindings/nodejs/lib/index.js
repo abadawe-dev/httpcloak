@@ -784,6 +784,30 @@ class StreamResponse {
   }
 
   /**
+   * The trailer fields the server sent after the body, which is where gRPC
+   * puts its status. Call it once the body has been read to the end: trailers
+   * arrive after the body, so unlike Response.trailer this cannot be set when
+   * the stream opens. Before the end it reports the names the response
+   * announced in its Trailer header, each with no values, because that is all
+   * the server has sent so far.
+   * @returns {Object<string, string[]>}
+   */
+  trailer() {
+    if (this._closed) {
+      return {};
+    }
+    const json = this._lib.httpcloak_stream_trailer(this._handle);
+    if (!json) {
+      return {};
+    }
+    try {
+      return JSON.parse(json);
+    } catch {
+      return {};
+    }
+  }
+
+  /**
    * Close the stream and release resources.
    */
   close() {
@@ -1002,6 +1026,8 @@ function getLib() {
       httpcloak_stream_request_async: nativeLibHandle.func("httpcloak_stream_request_async", "void", ["int64", "str", "int64"]),
       httpcloak_trim_memory: nativeLibHandle.func("httpcloak_trim_memory", "void", []),
       httpcloak_stream_get_metadata: nativeLibHandle.func("httpcloak_stream_get_metadata", HeapStr, ["int64"]),
+      httpcloak_stream_trailer: nativeLibHandle.func("httpcloak_stream_trailer", HeapStr, ["int64"]),
+      httpcloak_last_error: nativeLibHandle.func("httpcloak_last_error", HeapStr, ["int64"]),
       httpcloak_stream_read: nativeLibHandle.func("httpcloak_stream_read", HeapStr, ["int64", "int64"]),
       httpcloak_stream_close: nativeLibHandle.func("httpcloak_stream_close", "void", ["int64"]),
       // Chunked upload state machine (mirrors Python's stream_upload). Lets
@@ -1286,6 +1312,20 @@ function parseResponse(resultPtr, elapsed = 0) {
  * @param {number} [elapsed=0] - Elapsed milliseconds
  * @returns {Response}
  */
+/**
+ * Why the most recent handle-returning call on a session failed. Those calls
+ * return -1 and cannot carry a message, so without this every failure, from
+ * invalid request JSON to a refused connection, read the same.
+ * @param {Object} lib - Native library
+ * @param {number|bigint} sessionHandle - Session the call was made on
+ * @param {string} fallback - Message when the library recorded none
+ * @returns {string}
+ */
+function lastError(lib, sessionHandle, fallback) {
+  const message = lib.httpcloak_last_error(sessionHandle);
+  return message || fallback;
+}
+
 function parseRawResponse(lib, responseHandle, elapsed = 0) {
   const bodyLen = lib.httpcloak_response_get_body_len(responseHandle);
   if (bodyLen < 0) {
@@ -1917,7 +1957,7 @@ class Session {
     const responseHandle = this._lib.httpcloak_get_raw(this._handle, url, optionsJson);
     const elapsed = Date.now() - startTime;
     if (responseHandle < 0 || responseHandle === 0 || responseHandle === 0n) {
-      throw new HTTPCloakError("Request failed");
+      throw new HTTPCloakError(lastError(this._lib, this._handle, "Request failed"));
     }
     return parseRawResponse(this._lib, responseHandle, elapsed);
   }
@@ -2012,7 +2052,7 @@ class Session {
     const responseHandle = this._lib.httpcloak_post_raw(this._handle, url, bodyPtr, bodyLen, optionsJson);
     const elapsed = Date.now() - startTime;
     if (responseHandle < 0 || responseHandle === 0 || responseHandle === 0n) {
-      throw new HTTPCloakError("Request failed");
+      throw new HTTPCloakError(lastError(this._lib, this._handle, "Request failed"));
     }
     return parseRawResponse(this._lib, responseHandle, elapsed);
   }
@@ -2093,7 +2133,7 @@ class Session {
     );
     const elapsed = Date.now() - startTime;
     if (responseHandle < 0 || responseHandle === 0 || responseHandle === 0n) {
-      throw new HTTPCloakError("Request failed");
+      throw new HTTPCloakError(lastError(this._lib, this._handle, "Request failed"));
     }
     return parseRawResponse(this._lib, responseHandle, elapsed);
   }
@@ -2987,7 +3027,7 @@ class Session {
     // Start stream
     const streamHandle = this._lib.httpcloak_stream_get(this._handle, url, optionsJson);
     if (streamHandle < 0) {
-      throw new HTTPCloakError("Failed to start streaming request");
+      throw new HTTPCloakError(lastError(this._lib, this._handle, "Failed to start streaming request"));
     }
 
     // Get metadata
@@ -3081,7 +3121,7 @@ class Session {
     // Start stream
     const streamHandle = this._lib.httpcloak_stream_post(this._handle, url, body, optionsJson);
     if (streamHandle < 0) {
-      throw new HTTPCloakError("Failed to start streaming request");
+      throw new HTTPCloakError(lastError(this._lib, this._handle, "Failed to start streaming request"));
     }
 
     // Get metadata
@@ -3175,7 +3215,7 @@ class Session {
     // Start stream
     const streamHandle = this._lib.httpcloak_stream_request(this._handle, JSON.stringify(requestConfig));
     if (streamHandle < 0) {
-      throw new HTTPCloakError("Failed to start streaming request");
+      throw new HTTPCloakError(lastError(this._lib, this._handle, "Failed to start streaming request"));
     }
 
     // Get metadata
@@ -3240,8 +3280,8 @@ class Session {
 
     // Get raw response handle
     const responseHandle = this._lib.httpcloak_get_raw(this._handle, url, optionsJson);
-    if (responseHandle === 0 || responseHandle === 0n) {
-      throw new HTTPCloakError("Failed to make request");
+    if (responseHandle === 0 || responseHandle === 0n || responseHandle < 0) {
+      throw new HTTPCloakError(lastError(this._lib, this._handle, "Failed to make request"));
     }
 
     // Get body length first (1 FFI call)
@@ -3326,7 +3366,7 @@ class Session {
     // Use httpcloak_post_raw with binary buffer (no string conversion!)
     const responseHandle = this._lib.httpcloak_post_raw(this._handle, url, body, body.length, optionsJson);
     if (responseHandle === 0 || responseHandle === 0n || responseHandle < 0) {
-      throw new HTTPCloakError("Failed to make POST request");
+      throw new HTTPCloakError(lastError(this._lib, this._handle, "Failed to make POST request"));
     }
 
     // Get body length first (1 FFI call)
@@ -3427,7 +3467,7 @@ class Session {
     );
 
     if (responseHandle === 0 || responseHandle === 0n || responseHandle < 0) {
-      throw new HTTPCloakError("Failed to make request");
+      throw new HTTPCloakError(lastError(this._lib, this._handle, "Failed to make request"));
     }
 
     // Get body length first

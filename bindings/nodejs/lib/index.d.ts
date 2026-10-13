@@ -207,6 +207,13 @@ export class StreamResponse {
   /** Parse the response body as JSON */
   json<T = any>(): T;
 
+  /**
+   * Trailer fields sent after the body (gRPC puts its status here). Call it
+   * once the body has been read to the end; before that it lists the names
+   * announced in the Trailer header, each with no values.
+   */
+  trailer(): Record<string, string[]>;
+
   /** Close the stream and release resources */
   close(): void;
 

@@ -8,7 +8,7 @@
 # shipped shape is missing, add a forwarding overload for it instead: see the
 # forwarders at the end of Session.cs, which carry the 1.6.8 and 1.7.0 shapes.
 #
-# 442 members.
+# 443 members.
 
 HttpCloak.Cookie.Domain : System.String
 HttpCloak.Cookie.Expires : System.String
@@ -439,6 +439,7 @@ HttpCloak.StreamResponse.Encoding : System.String
 HttpCloak.StreamResponse.GetContentStream(System.Int32) : System.IO.Stream
 HttpCloak.StreamResponse.GetHeader(System.String) : System.String
 HttpCloak.StreamResponse.GetHeaders(System.String) : System.String[]
+HttpCloak.StreamResponse.GetTrailer() : System.Collections.Generic.IReadOnlyDictionary<System.String, System.String[]>
 HttpCloak.StreamResponse.Headers : System.Collections.Generic.Dictionary<System.String, System.String[]>
 HttpCloak.StreamResponse.History : System.Collections.Generic.List<HttpCloak.RedirectInfo>
 HttpCloak.StreamResponse.Json() : T

@@ -3895,7 +3895,7 @@ class Session:
         )
 
         if stream_handle < 0:
-            raise HTTPCloakError("Failed to start streaming request")
+            raise HTTPCloakError(_last_error(self._lib, self._handle, "Failed to start streaming request"))
 
         # Get metadata
         metadata_ptr = self._lib.httpcloak_stream_get_metadata(stream_handle)
@@ -4020,7 +4020,7 @@ class Session:
         )
 
         if stream_handle < 0:
-            raise HTTPCloakError("Failed to start streaming request")
+            raise HTTPCloakError(_last_error(self._lib, self._handle, "Failed to start streaming request"))
 
         # Get metadata
         metadata_ptr = self._lib.httpcloak_stream_get_metadata(stream_handle)
@@ -4234,7 +4234,7 @@ class Session:
         )
 
         if stream_handle < 0:
-            raise HTTPCloakError("Failed to start streaming request")
+            raise HTTPCloakError(_last_error(self._lib, self._handle, "Failed to start streaming request"))
 
         # Get metadata
         metadata_ptr = self._lib.httpcloak_stream_get_metadata(stream_handle)

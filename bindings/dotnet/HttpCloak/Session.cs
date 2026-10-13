@@ -466,7 +466,7 @@ public sealed class Session : IDisposable
         stopwatch.Stop();
 
         if (responseHandle < 0)
-            throw new HttpCloakException("Request failed");
+            throw new HttpCloakException(LastErrorOr("Request failed"));
 
         return ParseRawResponse(responseHandle, stopwatch.Elapsed);
     }
@@ -532,7 +532,7 @@ public sealed class Session : IDisposable
         stopwatch.Stop();
 
         if (responseHandle < 0)
-            throw new HttpCloakException("Request failed");
+            throw new HttpCloakException(LastErrorOr("Request failed"));
 
         return ParseRawResponse(responseHandle, stopwatch.Elapsed);
     }
@@ -677,7 +677,7 @@ public sealed class Session : IDisposable
         stopwatch.Stop();
 
         if (responseHandle < 0)
-            throw new HttpCloakException("Request failed");
+            throw new HttpCloakException(LastErrorOr("Request failed"));
 
         return ParseRawResponse(responseHandle, stopwatch.Elapsed);
     }
@@ -880,7 +880,7 @@ public sealed class Session : IDisposable
         stopwatch.Stop();
 
         if (responseHandle < 0)
-            throw new HttpCloakException("Request failed");
+            throw new HttpCloakException(LastErrorOr("Request failed"));
 
         return ParseRawResponse(responseHandle, stopwatch.Elapsed);
     }
@@ -1972,7 +1972,7 @@ public sealed class Session : IDisposable
 
         long streamHandle = Native.StreamGet(_handle, url, optionsJson);
         if (streamHandle < 0)
-            throw new HttpCloakException("Failed to start streaming request");
+            throw new HttpCloakException(LastErrorOr("Failed to start streaming request"));
 
         return CreateStreamResponse(streamHandle);
     }
@@ -2002,7 +2002,7 @@ public sealed class Session : IDisposable
 
         long streamHandle = Native.StreamPost(_handle, url, body, optionsJson);
         if (streamHandle < 0)
-            throw new HttpCloakException("Failed to start streaming request");
+            throw new HttpCloakException(LastErrorOr("Failed to start streaming request"));
 
         return CreateStreamResponse(streamHandle);
     }
@@ -2044,7 +2044,7 @@ public sealed class Session : IDisposable
 
         long streamHandle = Native.StreamRequest(_handle, requestJson);
         if (streamHandle < 0)
-            throw new HttpCloakException("Failed to start streaming request");
+            throw new HttpCloakException(LastErrorOr("Failed to start streaming request"));
 
         return CreateStreamResponse(streamHandle);
     }
@@ -2078,6 +2078,17 @@ public sealed class Session : IDisposable
         }
 
         return new StreamResponse(streamHandle, metadata);
+    }
+
+    /// <summary>
+    /// Why the most recent handle-returning call on this session failed. Those
+    /// calls return -1 and cannot carry a message, so without this every
+    /// failure, from invalid request JSON to a refused connection, read the same.
+    /// </summary>
+    private string LastErrorOr(string fallback)
+    {
+        var message = Native.PtrToStringAndFree(Native.LastError(_handle));
+        return string.IsNullOrEmpty(message) ? fallback : message;
     }
 
     // Same raw-path plumbing as ParseFastResponse, but materialises a regular
@@ -2207,7 +2218,7 @@ public sealed class Session : IDisposable
         stopwatch.Stop();
 
         if (responseHandle < 0)
-            throw new HttpCloakException("Request failed");
+            throw new HttpCloakException(LastErrorOr("Request failed"));
 
         return ParseFastResponse(responseHandle, stopwatch.Elapsed);
     }
@@ -2254,7 +2265,7 @@ public sealed class Session : IDisposable
         stopwatch.Stop();
 
         if (responseHandle < 0)
-            throw new HttpCloakException("Request failed");
+            throw new HttpCloakException(LastErrorOr("Request failed"));
 
         return ParseFastResponse(responseHandle, stopwatch.Elapsed);
     }
@@ -2311,7 +2322,7 @@ public sealed class Session : IDisposable
         stopwatch.Stop();
 
         if (responseHandle < 0)
-            throw new HttpCloakException("Request failed");
+            throw new HttpCloakException(LastErrorOr("Request failed"));
 
         return ParseFastResponse(responseHandle, stopwatch.Elapsed);
     }
@@ -3369,6 +3380,25 @@ public sealed class StreamResponse : IDisposable
     {
         if (_disposed)
             throw new ObjectDisposedException(nameof(StreamResponse));
+    }
+
+    /// <summary>
+    /// The trailer fields the server sent after the body, which is where gRPC
+    /// puts its status. Call it once the body has been read to the end:
+    /// trailers arrive after the body, so unlike <see cref="Response.Trailer"/>
+    /// this cannot be set when the stream opens. Before the end it reports the
+    /// names the response announced in its Trailer header, each with no values,
+    /// because that is all the server has sent so far.
+    /// </summary>
+    public IReadOnlyDictionary<string, string[]> GetTrailer()
+    {
+        if (_disposed)
+            return new Dictionary<string, string[]>();
+        var json = Native.PtrToStringAndFree(Native.StreamTrailer(_handle));
+        if (string.IsNullOrEmpty(json))
+            return new Dictionary<string, string[]>();
+        return JsonSerializer.Deserialize(json, JsonContext.Default.DictionaryStringStringArray)
+            ?? new Dictionary<string, string[]>();
     }
 
     public void Dispose()
