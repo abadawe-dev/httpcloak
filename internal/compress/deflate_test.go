@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 var body = []byte(strings.Repeat("the quick brown fox jumps over the lazy dog. ", 200))
@@ -144,4 +145,54 @@ func (o *oneByteReader) Read(p []byte) (int, error) {
 		return 0, nil
 	}
 	return o.r.Read(p[:1])
+}
+
+// A deflate stream that arrives slowly must be decoded as it arrives. The
+// framing used to be decided on a full 128-byte prefix, so the first bytes of a
+// server-sent event stream sat in the reader until 128 compressed bytes had
+// built up. Here one flushed message, far under 128 bytes, arrives and then the
+// source stalls; the message must come out while it does.
+func TestDeflateReaderDoesNotWaitForTheSniffLimit(t *testing.T) {
+	for _, framing := range []string{"zlib", "raw"} {
+		pr, pw := io.Pipe()
+		release := make(chan struct{})
+		go func() {
+			var w interface {
+				io.Writer
+				Flush() error
+				Close() error
+			}
+			if framing == "zlib" {
+				w = zlib.NewWriter(pw)
+			} else {
+				w, _ = flate.NewWriter(pw, flate.DefaultCompression)
+			}
+			w.Write([]byte("data: tick\n\n"))
+			w.Flush()
+			<-release
+			w.Close()
+			pw.Close()
+		}()
+
+		r := NewDeflateReader(pr)
+		got := make(chan string, 1)
+		go func() {
+			buf := make([]byte, 64)
+			n, _ := r.Read(buf)
+			got <- string(buf[:n])
+		}()
+		select {
+		case s := <-got:
+			if s != "data: tick\n\n" {
+				t.Errorf("%s: first read %q", framing, s)
+			}
+			close(release)
+		case <-time.After(2 * time.Second):
+			t.Errorf("%s: the first message did not come out while the stream was stalled", framing)
+			close(release)
+			<-got // the read finishes once the stream does; never share r with it
+		}
+		io.Copy(io.Discard, r)
+		r.Close()
+	}
 }
