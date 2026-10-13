@@ -1,0 +1,275 @@
+# safari-17-ios
+
+## tcp client hello (auto)
+extensions GREASE,23,65281,10,11,16,5,13,18,51,45,43,GREASE,21
+legacy_version 0x0303
+session_id 32 bytes
+cipher_suites GREASE,4865,4866,4867,49196,49195,52393,49200,49199,52392,49188,49187,49162,49161,49192,49191,49172,49171,157,156,61,60,53,47,49160,49170,10
+compression 00
+ext 10: GREASE 29 23 24 25
+ext 11: 0100
+ext 13: 1027 2052 1025 1283 515 2053 2053 1281 2054 1537 513
+ext 16: 000c02683208687474702f312e31
+ext 18: 
+ext 21: len=210
+ext 23: 
+ext 43: GREASE 772 771 770 769
+ext 45: 0101
+ext 5: 0100000000
+ext 51: GREASE:1 29:32
+ext 65281: 00
+ext GREASE: 
+ext GREASE: 00
+
+## tcp client hello (h2)
+extensions GREASE,23,65281,10,11,16,5,13,18,51,45,43,GREASE,21
+legacy_version 0x0303
+session_id 32 bytes
+cipher_suites GREASE,4865,4866,4867,49196,49195,52393,49200,49199,52392,49188,49187,49162,49161,49192,49191,49172,49171,157,156,61,60,53,47,49160,49170,10
+compression 00
+ext 10: GREASE 29 23 24 25
+ext 11: 0100
+ext 13: 1027 2052 1025 1283 515 2053 2053 1281 2054 1537 513
+ext 16: 000c02683208687474702f312e31
+ext 18: 
+ext 21: len=210
+ext 23: 
+ext 43: GREASE 772 771 770 769
+ext 45: 0101
+ext 5: 0100000000
+ext 51: GREASE:1 29:32
+ext 65281: 00
+ext GREASE: 
+ext GREASE: 00
+
+## tcp client hello (h1)
+extensions GREASE,23,65281,10,11,16,5,13,18,51,45,43,GREASE,21
+legacy_version 0x0303
+session_id 32 bytes
+cipher_suites GREASE,4865,4866,4867,49196,49195,52393,49200,49199,52392,49188,49187,49162,49161,49192,49191,49172,49171,157,156,61,60,53,47,49160,49170,10
+compression 00
+ext 10: GREASE 29 23 24 25
+ext 11: 0100
+ext 13: 1027 2052 1025 1283 515 2053 2053 1281 2054 1537 513
+ext 16: 000908687474702f312e31
+ext 18: 
+ext 21: len=213
+ext 23: 
+ext 43: GREASE 772 771 770 769
+ext 45: 0101
+ext 5: 0100000000
+ext 51: GREASE:1 29:32
+ext 65281: 00
+ext GREASE: 
+ext GREASE: 00
+
+## http/2
+connections 1, settings acks 1
+SETTINGS 2=1 4=2097152 3=100 5=16384 9=1
+WINDOW_UPDATE stream=0 increment=10485760
+HEADERS stream=1 flags=0x25 exclusive=false dep=0 weight=255
+  indexed 2                                                    :method: GET
+  indexed 7                                                    :scheme: https
+  incremental name=4 value-huffman=false                       :path: /a
+  incremental name=1 value-huffman=true                        :authority: 127.0.0.1:PORT
+  incremental name=19 value-huffman=true                       accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+  incremental name=literal huffman=true value-huffman=true     sec-fetch-dest: document
+  incremental name=literal huffman=true value-huffman=true     sec-fetch-mode: navigate
+  incremental name=literal huffman=true value-huffman=true     sec-fetch-site: none
+  incremental name=literal huffman=true value-huffman=false    sec-fetch-user: ?1
+  incremental name=17 value-huffman=true                       accept-language: en-US,en;q=0.9
+  incremental name=16 value-huffman=true                       accept-encoding: gzip, deflate, br
+  incremental name=58 value-huffman=true                       user-agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.7 Mobile/15E148 Safari/604.1
+HEADERS stream=3 flags=0x25 exclusive=false dep=0 weight=255
+  indexed 2                                                    :method: GET
+  indexed 7                                                    :scheme: https
+  incremental name=4 value-huffman=true                        :path: /b?q=1
+  indexed 71                                                   :authority: 127.0.0.1:PORT
+  indexed 70                                                   accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+  indexed 69                                                   sec-fetch-dest: document
+  indexed 68                                                   sec-fetch-mode: navigate
+  indexed 67                                                   sec-fetch-site: none
+  indexed 66                                                   sec-fetch-user: ?1
+  indexed 65                                                   accept-language: en-US,en;q=0.9
+  indexed 64                                                   accept-encoding: gzip, deflate, br
+  indexed 63                                                   user-agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.7 Mobile/15E148 Safari/604.1
+HEADERS stream=5 flags=0x24 exclusive=false dep=0 weight=255
+  indexed 3                                                    :method: POST
+  indexed 7                                                    :scheme: https
+  incremental name=4 value-huffman=false                       :path: /c
+  indexed 72                                                   :authority: 127.0.0.1:PORT
+  incremental name=19 value-huffman=false                      accept: */*
+  incremental name=71 value-huffman=true                       sec-fetch-dest: empty
+  incremental name=71 value-huffman=true                       sec-fetch-mode: cors
+  incremental name=71 value-huffman=true                       sec-fetch-site: cross-site
+  indexed 70                                                   accept-language: en-US,en;q=0.9
+  indexed 69                                                   accept-encoding: gzip, deflate, br
+  indexed 68                                                   user-agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.7 Mobile/15E148 Safari/604.1
+  incremental name=31 value-huffman=true                       content-type: application/json
+  incremental name=28 value-huffman=false                      content-length: 7
+DATA stream=5 flags=0x1 len=7
+
+## http/1.1
+--- request on connection 1
+GET /a HTTP/1.1
+Host: 127.0.0.1:PORT
+Connection: keep-alive
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Sec-Fetch-Dest: document
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Site: none
+Sec-Fetch-User: ?1
+Accept-Language: en-US,en;q=0.9
+Accept-Encoding: gzip, deflate, br
+User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.7 Mobile/15E148 Safari/604.1
+--- request on connection 1
+GET /b?q=1 HTTP/1.1
+Host: 127.0.0.1:PORT
+Connection: keep-alive
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Sec-Fetch-Dest: document
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Site: none
+Sec-Fetch-User: ?1
+Accept-Language: en-US,en;q=0.9
+Accept-Encoding: gzip, deflate, br
+User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.7 Mobile/15E148 Safari/604.1
+--- request on connection 1
+POST /c HTTP/1.1
+Host: 127.0.0.1:PORT
+Connection: keep-alive
+Accept: */*
+Sec-Fetch-Dest: empty
+Sec-Fetch-Mode: cors
+Sec-Fetch-Site: cross-site
+Accept-Language: en-US,en;q=0.9
+Accept-Encoding: gzip, deflate, br
+User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.7 Mobile/15E148 Safari/604.1
+Content-Type: application/json
+Content-Length: 7
+body "{\"k\":1}"
+
+## describe
+{
+  "version": 1,
+  "preset": {
+    "name": "safari-17-ios",
+    "tls": {
+      "client_hello": "ios-14"
+    },
+    "http2": {
+      "header_table_size": 4096,
+      "enable_push": true,
+      "max_concurrent_streams": 100,
+      "initial_window_size": 2097152,
+      "max_frame_size": 16384,
+      "max_header_list_size": 0,
+      "connection_window_update": 10485760,
+      "stream_weight": 255,
+      "stream_exclusive": false,
+      "no_rfc7540_priorities": true,
+      "settings_order": [
+        2,
+        4,
+        3,
+        5,
+        9
+      ],
+      "pseudo_order": [
+        ":method",
+        ":scheme",
+        ":path",
+        ":authority"
+      ],
+      "hpack_header_order": [
+        "accept",
+        "sec-fetch-dest",
+        "sec-fetch-mode",
+        "sec-fetch-site",
+        "sec-fetch-user",
+        "accept-language",
+        "accept-encoding",
+        "user-agent",
+        "referer",
+        "cookie",
+        "content-type",
+        "content-length",
+        "origin"
+      ],
+      "hpack_indexing_policy": "default",
+      "stream_priority_mode": "default",
+      "disable_cookie_split": true,
+      "data_frame_max_size": 0,
+      "preface_ping_idle_ms": 0,
+      "preface_ping_hang_ms": 0,
+      "idle_ping_ms": 0,
+      "priority_over_http1": true
+    },
+    "http3": {
+      "qpack_max_table_capacity": 16383,
+      "qpack_blocked_streams": 100,
+      "max_field_section_size": 0,
+      "enable_datagrams": false,
+      "quic_initial_packet_size": 1250,
+      "quic_max_incoming_streams": 100,
+      "quic_max_incoming_uni_streams": 103,
+      "quic_allow_0rtt": true,
+      "quic_chrome_style_initial": false,
+      "quic_disable_hello_scramble": false,
+      "quic_transport_param_order": "random",
+      "quic_connection_id_length": 0,
+      "quic_max_datagram_frame_size": 65536,
+      "max_response_header_bytes": 262144,
+      "send_grease_frames": false
+    },
+    "headers": {
+      "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.7 Mobile/15E148 Safari/604.1",
+      "values": {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1"
+      },
+      "order": [
+        {
+          "key": "accept",
+          "value": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        },
+        {
+          "key": "sec-fetch-dest",
+          "value": "document"
+        },
+        {
+          "key": "sec-fetch-mode",
+          "value": "navigate"
+        },
+        {
+          "key": "sec-fetch-site",
+          "value": "none"
+        },
+        {
+          "key": "sec-fetch-user",
+          "value": "?1"
+        },
+        {
+          "key": "accept-language",
+          "value": "en-US,en;q=0.9"
+        },
+        {
+          "key": "accept-encoding",
+          "value": "gzip, deflate, br"
+        },
+        {
+          "key": "user-agent",
+          "value": ""
+        }
+      ]
+    },
+    "protocols": {
+      "http3": false
+    }
+  }
+}
