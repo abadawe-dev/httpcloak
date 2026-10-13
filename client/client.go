@@ -125,7 +125,9 @@ type Client struct {
 // Tries HTTP/3 first, then HTTP/2, then HTTP/1.1 as fallback
 func NewClient(presetName string, opts ...Option) *Client {
 	config := DefaultConfig()
-	config.Preset = presetName
+	if presetName != "" {
+		config.Preset = presetName
+	}
 	for _, opt := range opts {
 		opt(config)
 	}

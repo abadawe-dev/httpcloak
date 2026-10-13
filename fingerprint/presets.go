@@ -3931,8 +3931,12 @@ var presets = map[string]func() *Preset{
 }
 
 // Get returns a preset by name. Checks custom registry first, then built-in
-// presets. Falls back to Chrome146 if not found.
+// presets. An empty name is the default preset, chrome-latest, as it is for a
+// session; an unknown name falls back to Chrome146.
 func Get(name string) *Preset {
+	if name == "" {
+		name = "chrome-latest"
+	}
 	if p := LookupCustom(name); p != nil {
 		return p
 	}
