@@ -296,12 +296,6 @@ type HTTP3Transport struct {
 	// Track requests for timing
 	requestCount int64
 	dialCount    int64 // Number of times dialQUIC was called (new connections)
-	// zeroRTTRejected records hosts that rejected early data. The 0-RTT retry
-	// loop used to recreate the transport and dial again with the SAME session
-	// ticket, so every retry offered 0-RTT and got the same rejection: three
-	// rounds, six dials, several seconds, then a hard failure on a host that
-	// would have answered a plain handshake immediately.
-	zeroRTTRejected map[string]bool
 
 	// lastConn is the most recent connection handed back by any dial path,
 	// kept so Stats can read its handshake state on demand. One pointer,
@@ -327,7 +321,18 @@ type HTTP3Transport struct {
 	udpbaraMu     sync.Mutex      // guards lazy connect of udpbaraTunnel
 	proxyConns    []*proxyQUICConn
 	proxyConnsMu  sync.Mutex
-	quicTransport *quic.Transport // Only used for direct connections
+
+	// Direct connections each get a UDP socket of their own, closed with the
+	// connection; see dialDirect. h3Closed is set by Close so that a dial
+	// racing it cannot open a socket afterwards.
+	liveMu   sync.Mutex
+	sockets  map[*quic.Conn]*directSocket
+	h3Closed bool
+
+	// byOrigin holds every live connection, from any dial path, under the
+	// host:port it was dialed for, so one origin's connections can be ended
+	// without touching the others'. Guarded by liveMu.
+	byOrigin map[string]map[*quic.Conn]struct{}
 
 	// MASQUE proxy support
 	masqueConn *proxy.MASQUEConn
@@ -600,32 +605,8 @@ func NewHTTP3TransportWithTransportConfig(preset *fingerprint.Preset, dnsCache *
 		t.localAddr = config.LocalAddr
 	}
 
-	// Create QUIC transport for direct connections
-	// We need a bound UDP socket for quic.Transport
-	var localUDPAddr *net.UDPAddr
-	if t.localAddr != "" {
-		localUDPAddr = &net.UDPAddr{IP: net.ParseIP(t.localAddr)}
-	} else {
-		localUDPAddr = &net.UDPAddr{IP: net.IPv4zero, Port: 0}
-	}
-	udpConn, err := ListenUDPWithLocalAddr("udp", localUDPAddr, t.localAddr)
-	if err != nil {
-		if t.localAddr != "" {
-			// localAddr is set — retrying with the same IP on "udp6" won't help
-			return nil, fmt.Errorf("failed to create UDP socket for %s: %w", t.localAddr, err)
-		}
-		// Fallback to IPv6 if IPv4 fails (no localAddr — try IPv6zero)
-		localUDPAddr = &net.UDPAddr{IP: net.IPv6zero, Port: 0}
-		udpConn, err = ListenUDPWithLocalAddr("udp6", localUDPAddr, t.localAddr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create UDP socket (IPv4 and IPv6 both failed): %w", err)
-		}
-	}
-	t.quicTransport = &quic.Transport{
-		Conn:                         udpConn,
-		ConnectionIDLength:           t.preset.H3QUICConnectionIDLength(),
-		AllowZeroLengthConnectionIDs: true,
-	}
+	// No socket is opened here: each direct dial opens its own (dialDirect),
+	// so a transport that never dials HTTP/3 holds none.
 
 	// Create HTTP/3 transport with custom dial for DNS caching
 	// http3.Transport handles connection pooling internally
@@ -754,7 +735,7 @@ func NewHTTP3TransportWithConfig(preset *fingerprint.Preset, dnsCache *dns.Cache
 	// bounds the connect by the dial's own context.
 	if proxyConfig != nil && proxyConfig.URL != "" {
 		t.usesUDPProxy = true
-		// Note: quicTransport is NOT created here — each dial creates its own per-connection
+		// Proxied dials create their own per-connection transports.
 	}
 
 	// Build H3 additional settings from preset getters
@@ -1136,14 +1117,6 @@ func (t *HTTP3Transport) dialQUICWithProxy(ctx context.Context, addr string, tls
 	return conn, nil
 }
 
-// raceQUICDial implements Happy Eyeballs-style connection racing (legacy, fetches ECH internally)
-// Tries IPv6 first with a short timeout, then falls back to IPv4 if needed
-func (t *HTTP3Transport) raceQUICDial(ctx context.Context, host string, ipv6Addrs, ipv4Addrs []*net.UDPAddr, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
-	// Fetch ECH config (legacy path - used by proxy dial functions)
-	echConfigList := t.getECHConfig(ctx, host)
-	return t.raceQUICDialWithECH(ctx, host, ipv6Addrs, ipv4Addrs, tlsCfg, cfg, echConfigList)
-}
-
 // SetIPv4FirstOverride transiently biases the next Happy-Eyeballs QUIC dials to
 // lead with IPv4. doHTTP3 flips it on for a single forced-H3 retry after the
 // leading family stalled the roundtrip, then flips it back.
@@ -1266,41 +1239,149 @@ func (t *HTTP3Transport) happyEyeballsDialQUIC(ctx context.Context, addrs []*net
 			// ClientHello spec, so concurrent dials never mutate shared state.
 			// The spec matters most: utls rewrites it in place during
 			// ApplyPreset, so a shared one is corrupted by the racing dial.
-			return t.quicTransport.DialEarly(rctx, addrs[idx], tlsCfg, makeConfig())
+			return t.dialDirect(rctx, addrs[idx], tlsCfg, makeConfig())
 		},
 		func(c *quic.Conn) { c.CloseWithError(0, "lost happy-eyeballs race") },
 	)
 }
 
-// dialFirstSuccessful tries each address in order until one succeeds.
-// Per-address timeout prevents a single unresponsive IP from consuming the entire timeout budget.
-func (t *HTTP3Transport) dialFirstSuccessful(ctx context.Context, addrs []*net.UDPAddr, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
-	var lastErr error
-	for i, addr := range addrs {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
+// directSocket is the UDP socket behind one direct QUIC connection.
+type directSocket struct {
+	tr   *quic.Transport
+	udp  *net.UDPConn
+	once sync.Once
+}
 
-		// Per-address timeout: divide remaining time evenly, cap at 10s
-		remaining := len(addrs) - i
-		perAddrTimeout := 10 * time.Second
-		if deadline, ok := ctx.Deadline(); ok {
-			budget := time.Until(deadline) / time.Duration(remaining)
-			if budget < perAddrTimeout {
-				perAddrTimeout = budget
-			}
-		}
-		addrCtx, addrCancel := context.WithTimeout(ctx, perAddrTimeout)
-		conn, err := t.quicTransport.DialEarly(addrCtx, addr, tlsCfg, cfg)
-		addrCancel()
-		if err == nil {
-			return conn, nil
-		}
-		lastErr = err
+// close ends the quic.Transport and then the socket. quic.Transport.Close only
+// closes a socket it created itself, and this one was handed in, so the socket
+// is closed here explicitly. The shared socket this replaced was never closed
+// at all, so every transport that had dialed HTTP/3 kept one open for good.
+func (s *directSocket) close() {
+	s.once.Do(func() {
+		closeWithTimeout(s.tr, 3*time.Second)
+		s.udp.Close()
+	})
+}
+
+// dialDirect dials one direct QUIC connection on a UDP socket of its own.
+//
+// Chromium opens a socket per QUIC session (QuicSessionPool::CreateSessionHelper
+// calls CreateSocket for each one). Every connection here used to share one
+// socket, which broke Chrome presets outright: their connection IDs are
+// zero-length, so a server's packets carry nothing that says which connection
+// they are for, and quic-go, which demultiplexes a socket by connection ID,
+// handed one origin's packets to another origin's connection (#126). With two
+// origins open at once, every request to the second one failed. Sharing also
+// sent every connection of a session from one source port, which a server can
+// link; a browser's come from different ports.
+func (t *HTTP3Transport) dialDirect(ctx context.Context, addr *net.UDPAddr, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
+	network, local := "udp4", &net.UDPAddr{IP: net.IPv4zero}
+	if addr.IP.To4() == nil {
+		network, local = "udp6", &net.UDPAddr{IP: net.IPv6zero}
 	}
-	return nil, lastErr
+	if t.localAddr != "" {
+		local = &net.UDPAddr{IP: net.ParseIP(t.localAddr)}
+	}
+	udp, err := ListenUDPWithLocalAddr(network, local, t.localAddr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create UDP socket: %w", err)
+	}
+	sock := &directSocket{
+		tr: &quic.Transport{
+			Conn:                         udp,
+			ConnectionIDLength:           t.preset.H3QUICConnectionIDLength(),
+			AllowZeroLengthConnectionIDs: true,
+		},
+		udp: udp,
+	}
+	conn, err := sock.tr.DialEarly(ctx, addr, tlsCfg, cfg)
+	if err != nil {
+		sock.close()
+		return nil, err
+	}
+
+	t.liveMu.Lock()
+	if t.h3Closed {
+		t.liveMu.Unlock()
+		conn.CloseWithError(0, "")
+		sock.close()
+		return nil, net.ErrClosed
+	}
+	if t.sockets == nil {
+		t.sockets = make(map[*quic.Conn]*directSocket)
+	}
+	t.sockets[conn] = sock
+	t.liveMu.Unlock()
+
+	// The socket goes with the connection, whoever ends it: the peer, an idle
+	// timeout, a lost Happy Eyeballs race, or closeDirectConns.
+	context.AfterFunc(conn.Context(), func() {
+		t.liveMu.Lock()
+		delete(t.sockets, conn)
+		t.liveMu.Unlock()
+		sock.close()
+	})
+	return conn, nil
+}
+
+// trackOrigin records a live connection under the origin it was dialed for,
+// until it ends.
+func (t *HTTP3Transport) trackOrigin(addr string, conn *quic.Conn) {
+	t.liveMu.Lock()
+	if t.byOrigin == nil {
+		t.byOrigin = make(map[string]map[*quic.Conn]struct{})
+	}
+	if t.byOrigin[addr] == nil {
+		t.byOrigin[addr] = make(map[*quic.Conn]struct{})
+	}
+	t.byOrigin[addr][conn] = struct{}{}
+	t.liveMu.Unlock()
+	context.AfterFunc(conn.Context(), func() {
+		t.liveMu.Lock()
+		delete(t.byOrigin[addr], conn)
+		if len(t.byOrigin[addr]) == 0 {
+			delete(t.byOrigin, addr)
+		}
+		t.liveMu.Unlock()
+	})
+}
+
+// closeOrigin ends every connection to one origin and leaves the rest alone.
+func (t *HTTP3Transport) closeOrigin(addr string) {
+	t.liveMu.Lock()
+	conns := t.byOrigin[addr]
+	delete(t.byOrigin, addr)
+	t.liveMu.Unlock()
+	for conn := range conns {
+		conn.CloseWithError(0, "")
+	}
+}
+
+// originKey is the host:port the http3 transport dials for u, which is also
+// the key trackOrigin records connections under.
+func originKey(u *url.URL) string {
+	if u.Port() != "" {
+		return u.Host
+	}
+	return net.JoinHostPort(u.Hostname(), "443")
+}
+
+// closeDirectConns ends every direct connection and closes its socket. The
+// http3 pool can drop a connection without closing it, and keep-alive stops
+// such a connection from ever idling out, so this is the only thing that ends
+// those. With final set, later dials are refused.
+func (t *HTTP3Transport) closeDirectConns(final bool) {
+	t.liveMu.Lock()
+	if final {
+		t.h3Closed = true
+	}
+	sockets := t.sockets
+	t.sockets = nil
+	t.liveMu.Unlock()
+	for conn, sock := range sockets {
+		conn.CloseWithError(0, "")
+		sock.close()
+	}
 }
 
 // buildQUICConfig builds a QUIC config from preset getters.
@@ -1345,26 +1426,12 @@ func (t *HTTP3Transport) recordHandshakeState(
 		return nil
 	}
 	return func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
-		// A host that rejected early data once will reject it again. Dropping
-		// the session cache for that dial forces a full handshake, which is the
-		// only thing that makes the retry different from the attempt that just
-		// failed.
-		if host, _, splitErr := net.SplitHostPort(addr); splitErr == nil {
-			t.mu.RLock()
-			rejected := t.zeroRTTRejected[host]
-			t.mu.RUnlock()
-			if rejected && tlsCfg != nil && tlsCfg.ClientSessionCache != nil {
-				noResume := tlsCfg.Clone()
-				noResume.ClientSessionCache = nil
-				tlsCfg = noResume
-			}
-		}
-
 		conn, err := dial(ctx, addr, tlsCfg, cfg)
 		if err == nil && conn != nil {
 			t.mu.Lock()
 			t.lastConn = conn
 			t.mu.Unlock()
+			t.trackOrigin(addr, conn)
 		}
 		return conn, err
 	}
@@ -1605,7 +1672,18 @@ func (t *HTTP3Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	transport := t.transport
 	t.mu.RUnlock()
 
-	// Retry up to 3 times on 0-RTT rejection (can happen multiple times after Refresh)
+	// Retry on 0-RTT rejection. The rejected connection cannot carry the
+	// request, so it is ended along with the ticket that offered the early
+	// data, and the retry dials a full handshake that picks up a fresh ticket.
+	//
+	// This used to close and rebuild the whole transport, which ended every
+	// other origin's connections and failed their requests in flight; and the
+	// host was marked rather than its ticket dropped, but every dial path put
+	// the session cache back and still chose the resuming hello, so each retry
+	// offered 0-RTT and was rejected again until the request failed (#127).
+	// Chrome goes further still and resends on the same connection once its
+	// handshake completes; that would need the HTTP/3 layer to reopen its
+	// control streams after the rejection, which it cannot do today.
 	var resp *http.Response
 	var err error
 	for attempt := 0; attempt < 3; attempt++ {
@@ -1613,27 +1691,11 @@ func (t *HTTP3Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		if err == nil || !is0RTTRejectedError(err) {
 			break
 		}
-		// 0-RTT rejected. Mark the host BEFORE recreating, so the next dial
-		// suppresses the session cache and does a full handshake. Without this
-		// the retry repeats the identical offer and gets the identical
-		// rejection, which is what turned a recoverable stall into a hard
-		// failure after six dials.
-		if host := hostOnly(req.URL.Host); host != "" {
-			t.mu.Lock()
-			if t.zeroRTTRejected == nil {
-				t.zeroRTTRejected = make(map[string]bool)
-			}
-			t.zeroRTTRejected[host] = true
-			t.mu.Unlock()
+		origin := originKey(req.URL)
+		if t.sessionCache != nil {
+			t.sessionCache.Put(hostOnly(origin), nil)
 		}
-		// close unusable connection and recreate transport
-		// Use timeout to prevent blocking if QUIC drain takes too long
-		closeWithTimeout(transport, 3*time.Second)
-		t.recreateTransport()
-		// Re-read transport pointer after recreate
-		t.mu.RLock()
-		transport = t.transport
-		t.mu.RUnlock()
+		t.closeOrigin(origin)
 	}
 
 	// Check if a new connection was created during this request
@@ -1721,9 +1783,7 @@ func (t *HTTP3Transport) Close() error {
 	// Use timeout for QUIC closes to prevent blocking on graceful drain
 	closeWithTimeout(transport, 3*time.Second)
 
-	if t.quicTransport != nil {
-		closeWithTimeout(t.quicTransport, 3*time.Second)
-	}
+	t.closeDirectConns(true)
 
 	// Close udpbara tunnel (if it was ever connected) and all proxy QUIC
 	// connections. Guard the tunnel handle with udpbaraMu since it is connected
@@ -1766,33 +1826,9 @@ func (t *HTTP3Transport) Refresh() error {
 		closeWithTimeout(t.transport, 3*time.Second)
 	}
 
-	// Close and recreate quicTransport if it exists (for direct connections only)
-	if t.quicTransport != nil && !t.usesUDPProxy && t.masqueConn == nil {
-		closeWithTimeout(t.quicTransport, 3*time.Second)
-		// Create new UDP socket with localAddr binding if configured
-		var localUDPAddr *net.UDPAddr
-		if t.localAddr != "" {
-			localUDPAddr = &net.UDPAddr{IP: net.ParseIP(t.localAddr)}
-		} else {
-			localUDPAddr = &net.UDPAddr{IP: net.IPv4zero, Port: 0}
-		}
-		udpConn, err := ListenUDPWithLocalAddr("udp", localUDPAddr, t.localAddr)
-		if err != nil {
-			if t.localAddr != "" {
-				return fmt.Errorf("failed to create UDP socket for %s: %w", t.localAddr, err)
-			}
-			localUDPAddr = &net.UDPAddr{IP: net.IPv6zero, Port: 0}
-			udpConn, err = ListenUDPWithLocalAddr("udp6", localUDPAddr, t.localAddr)
-			if err != nil {
-				return fmt.Errorf("failed to create UDP socket (IPv4 and IPv6 both failed): %w", err)
-			}
-		}
-		t.quicTransport = &quic.Transport{
-			Conn:                         udpConn,
-			ConnectionIDLength:           t.preset.H3QUICConnectionIDLength(),
-			AllowZeroLengthConnectionIDs: true,
-		}
-	}
+	// End every direct connection and its socket, including any the http3
+	// pool has already let go of without closing.
+	t.closeDirectConns(false)
 
 	// Close old proxy QUIC connections; tunnel stays alive for new dials.
 	// Keyed off usesUDPProxy (immutable) so it is race-free even if the tunnel
@@ -1937,31 +1973,6 @@ func boundedECHAttempt(ctx context.Context) (context.Context, context.CancelFunc
 		budget = echAttemptMaxBudget
 	}
 	return context.WithTimeout(ctx, budget)
-}
-
-// recreateTransport recreates the HTTP/3 transport after 0-RTT rejection
-
-// recreateTransport recreates the HTTP/3 transport after 0-RTT rejection
-// This is called from RoundTrip when the server rejects early data
-func (t *HTTP3Transport) recreateTransport() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	// Build additional settings from preset getters
-	additionalSettings := t.buildH3AdditionalSettings()
-
-	// Determine which dial function to use
-	var dialFunc func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error)
-	if t.masqueConn != nil {
-		dialFunc = t.dialQUICWithMASQUE
-	} else if t.usesUDPProxy {
-		dialFunc = t.dialQUICWithProxy
-	} else {
-		dialFunc = t.dialQUIC
-	}
-
-	// Recreate the transport
-	t.transport = t.buildHTTP3Transport(dialFunc, additionalSettings)
 }
 
 // GetSessionCache returns the TLS session cache

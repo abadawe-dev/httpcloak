@@ -354,6 +354,38 @@ func (c *PersistableSessionCache) evictIfNeeded() {
 	}
 }
 
+// deleteLocked removes a session locally and from the backend. Must be called
+// with the lock held.
+func (c *PersistableSessionCache) deleteLocked(sessionKey string) {
+	if _, ok := c.sessions[sessionKey]; ok {
+		delete(c.sessions, sessionKey)
+		for i, k := range c.accessOrder {
+			if k == sessionKey {
+				c.accessOrder = append(c.accessOrder[:i], c.accessOrder[i+1:]...)
+				break
+			}
+		}
+	}
+	if c.backend != nil {
+		go c.deleteFromBackend(sessionKey)
+	}
+}
+
+// deleteFromBackend removes a session from the distributed backend, so a later
+// Get does not fetch back a ticket that was dropped on purpose.
+func (c *PersistableSessionCache) deleteFromBackend(sessionKey string) {
+	host, port := parseSessionKey(sessionKey)
+	if host == "" {
+		return
+	}
+	backendKey := FormatSessionCacheKeyWithID(c.sessionId, c.preset, c.protocol, host, port)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := c.backend.Delete(ctx, backendKey); err != nil {
+		c.reportError("delete", backendKey, err)
+	}
+}
+
 // moveToEnd moves a key to the end of accessOrder (must be called with lock held)
 func (c *PersistableSessionCache) moveToEnd(key string) {
 	for i, k := range c.accessOrder {
@@ -370,6 +402,16 @@ func (c *PersistableSessionCache) moveToEnd(key string) {
 func (c *PersistableSessionCache) Put(sessionKey string, cs *tls.ClientSessionState) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	// A nil state means remove the entry, per the tls.ClientSessionCache
+	// contract, and TLS stacks call it that way when a ticket stops being
+	// usable. It used to be stored as an entry holding nil, so Get reported a
+	// session that did not exist, the PSK hello was chosen for a host with
+	// nothing to resume, and the backend was handed nil to serialise.
+	if cs == nil {
+		c.deleteLocked(sessionKey)
+		return
+	}
 
 	now := time.Now()
 
