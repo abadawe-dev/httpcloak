@@ -18,7 +18,7 @@ The dispatcher in `transport/transport.go` is one function, `doAuto`. The steps 
 2. Otherwise fire two goroutines: one dials H3 over UDP via QUIC, the other dials H2 over TCP+TLS.
 3. Take the first success. Cancel the loser.
 4. If H2's TLS handshake came back with `http/1.1` in ALPN (`ALPNMismatchError`), reuse that same TLS connection for an H1 request. No second handshake.
-5. If both attempts fail (or the 6-second race budget elapses), fall through to H1 on a fresh TCP connection. There's no extra H2 retry; H2 already had its shot inside the race.
+5. If both attempts fail (or the 6-second race budget elapses), fall through to H1 on a fresh TCP connection. There's no extra H2 retry; H2 already had its shot inside the race. This fallback never sends a request twice: it runs only when nothing of the first attempt reached the server (no connection could be had), or when the request is idempotent (GET, HEAD, OPTIONS, TRACE, PUT, DELETE) and its body is held in memory. A POST whose stream failed after it went out returns that error instead, as it does in Chrome.
 6. Cache the winning protocol in `protocolSupport[host]` so the next request to the same host skips the race. Step 5's fallback is the exception: an H1 response served only because the H2 attempt failed says nothing about the host, so it is not cached, and the next request races again. An ALPN downgrade (step 4) is a fact about the host and is cached.
 
 The race lives in `raceH3H2`. It dodges the 5-second wall you'd hit when H3 went first and the network silently swallowed UDP/443. With the race, H2 fills in the moment TCP comes back, usually under 200ms.
@@ -37,7 +37,7 @@ When neither hint mentions H3, the race still includes H3 on the first try, but 
 H1 is the boring fallback. You land there when:
 
 - The TLS server hello returns `http/1.1` in ALPN. The `ALPNMismatchError` path reuses the connection.
-- Both H3 and H2 attempts fail outright and the lib has to try H1 on a fresh TCP connection.
+- Both H3 and H2 attempts fail outright and the lib has to try H1 on a fresh TCP connection, under the rule in step 5.
 - You forced it with `WithForceHTTP1()` or `RefreshWithProtocol("h1")`.
 
 For normal browsing-shaped traffic against modern hosts, H1 should be rare.

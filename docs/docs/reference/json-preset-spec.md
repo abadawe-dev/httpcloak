@@ -221,7 +221,8 @@ The build step rejects the following combinations:
 - `ja3_extras` without `ja3`.
 - Any of `psk_client_hello`, `quic_client_hello`, `quic_psk_client_hello` when there's no primary `client_hello` or `ja3` to anchor them.
 - `quic_client_hello` / `quic_psk_client_hello` / `psk_client_hello` paired with `ja3` (JA3 doesn't control QUIC TLS, use `client_hello` mode for QUIC).
-- TLS extension fields (`signature_algorithms`, `alpn`, `cert_compression`, `permute_extensions`, `record_size_limit`) when `client_hello` is set without `ja3` (those fields only apply to JA3).
+- `alpn`, `cert_compression`, `record_size_limit` or `permute_extensions` in a `tls` block without `ja3`, whether the hello comes from `client_hello`, from `based_on`, or from a `raw_client_hello` (which fixes them already; `permute_extensions` is allowed there). They are only read alongside `ja3`, so the build refuses them instead of dropping them. `signature_algorithms` is the exception: on the `client_hello` path it overrides the extension on top of the inherited hello.
+- Any top-level TLS extension field (`signature_algorithms`, `delegated_credential_algorithms`, `alpn`, `cert_compression`, `permute_extensions`, `record_size_limit`, `key_share_curves`) next to a `ja3_extras` block. `ja3_extras` replaces them, so put them inside it.
 
 ---
 

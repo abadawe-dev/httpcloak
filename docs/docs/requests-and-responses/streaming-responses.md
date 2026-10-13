@@ -150,8 +150,9 @@ The body is bytes coming off the wire. The caller decides how to split them.
 
 ## Trailers
 
-`Trailer()` returns the trailing header block, lowercase-keyed, or nil when there
-was none.
+A streamed response has a method that returns the trailing header block,
+lowercase-keyed, or an empty result when there was none: `Trailer()` in Go,
+`trailer()` in Python and Node.js, `GetTrailer()` in .NET.
 
 Call it after the body has been read to EOF. On a streamed response the trailers
 have not arrived when the header block does, which is why this is a method rather
@@ -163,12 +164,51 @@ gRPC is the case that needs it: the call's real status arrives in the trailers
 and the response is a 200 either way, so a streamed gRPC call read without this
 reports every failure as a success.
 
+<Tabs groupId="lang">
+<TabItem value="go" label="Go">
+
+```go
+st, err := session.GetStream(ctx, "https://example.com/grpc")
+if err != nil {
+    return err
+}
+defer st.Close()
+body, _ := io.ReadAll(st)     // drain to EOF first
+fmt.Println(st.Trailer())     // map[grpc-message:[unavailable] grpc-status:[14]]
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
 ```python
 st = session.get_stream("https://example.com/grpc")
 body = st.read_all()          # drain to EOF first
 print(st.trailer())           # {'grpc-status': ['14'], 'grpc-message': ['unavailable']}
 st.close()
 ```
+
+</TabItem>
+<TabItem value="nodejs" label="Node.js">
+
+```js
+const st = session.getStream("https://example.com/grpc");
+const body = st.readAll();    // drain to EOF first
+console.log(st.trailer());    // { 'grpc-status': [ '14' ], 'grpc-message': [ 'unavailable' ] }
+st.close();
+```
+
+</TabItem>
+<TabItem value="dotnet" label=".NET">
+
+```csharp
+using var st = session.GetStream("https://example.com/grpc");
+var body = st.ReadAll();      // drain to EOF first
+var trailer = st.GetTrailer();
+Console.WriteLine(trailer["grpc-status"][0]);   // 14
+```
+
+</TabItem>
+</Tabs>
 
 ## Opening a stream without blocking
 

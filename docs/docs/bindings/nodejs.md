@@ -407,6 +407,7 @@ What each piece does:
 - `loadPreset(filePath)` / `loadPresetFromJSON(jsonString)` register a custom preset at runtime; both return the name to pass to a `Session` constructor. `unregisterPreset(name)` removes one.
 - `setEchDnsServers(["8.8.8.8:53", ...])` overrides the DNS resolvers used for ECH HTTPS RR lookups (default: Google, Cloudflare, Quad9). Pass `null` to reset. `getEchDnsServers()` returns the current list.
 - `availablePresets()` returns `{ [name]: { protocols: ["h1","h2","h3"] } }` so you can filter by supported protocol.
+- `Preset.all()` lists every preset name this binding version has a constant for, each once. `availablePresets()` is the live list, custom presets included.
 - `version()` returns the linked native library version.
 
 Module-level `get/post/...` use a process-wide implicit session configured via `configure({...})`. They're handy for one-off scripts; use `Session` directly for anything long-lived.

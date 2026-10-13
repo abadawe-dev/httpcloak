@@ -138,13 +138,15 @@ The 143-and-newer Chrome desktop line:
 
 ## Chrome iOS
 
-iOS Chrome is a WebKit wrapper, so its TLS fingerprint matches Safari iOS rather than desktop Chrome. App Store policy forces this; Apple won't let third-party browsers ship their own engines on iOS.
+iOS Chrome is a WebKit wrapper, so its TLS fingerprint matches Safari iOS rather than desktop Chrome. `chrome-155-ios` and `chrome-152-ios` are listed with the desktop versions above. App Store policy forces this; Apple won't let third-party browsers ship their own engines on iOS.
 
 | Preset | UA | TLS | Notes |
 |---|---|---|---|
-| `chrome-148-ios` | `...CriOS/148.0.0.0 Mobile/15E148 Safari/604.1` | `HelloIOS_18` | Inherits from `chrome-146-ios`. |
-| `chrome-147-ios` | `...CriOS/147.0.0.0 Mobile/15E148 Safari/604.1` | `HelloIOS_18` | Inherits from `chrome-146-ios`. |
-| `chrome-146-ios` | `...CriOS/146.0.0.0 Mobile/15E148 Safari/604.1` | `HelloIOS_18` | Native Go preset. |
+| `chrome-151-ios` | `...iPhone OS 26_6_0...CriOS/151.0.7922.112 Mobile/15E148 Safari/604.1` | `HelloIOS_18` | Headers-only over 150. Built from a real capture. |
+| `chrome-150-ios` | `...iPhone OS 26_5_0...CriOS/150.0.7871.51 Mobile/15E148 Safari/604.1` | `HelloIOS_18` | Headers-only over 148. Built from a real capture. No ML-DSA: iOS uses the system TLS stack. |
+| `chrome-148-ios` | `...iPhone OS 26_4_2...CriOS/148.0.7778.47 Mobile/15E148 Safari/604.1` | `HelloIOS_18` | Inherits from `chrome-146-ios`. |
+| `chrome-147-ios` | `...CriOS/147.0.6917.0 Mobile/15E148 Safari/604.1` | `HelloIOS_18` | Inherits from `chrome-146-ios`. |
+| `chrome-146-ios` | `...CriOS/146.0.6917.0 Mobile/15E148 Safari/604.1` | `HelloIOS_18` | Native Go preset. |
 | `chrome-145-ios` | `...CriOS/145.0.0.0...` | `HelloIOS_18` | Native Go preset. |
 | `chrome-144-ios` | `...CriOS/144.0.0.0...` | `HelloIOS_18` | Native Go preset. |
 | `chrome-143-ios` | `...CriOS/143.0.0.0...` | `HelloIOS_18` | Native Go preset. |
