@@ -14,6 +14,7 @@
 // them once they are copied into the JVM.
 
 #include <jni.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -124,9 +125,14 @@ static void on_async_result(int64_t callback_id, const char *response_json, cons
 }
 
 // The library never frees a string returned by a cache getter; it copies it
-// before the getter's C call returns, on this same thread. Each thread keeps
-// its latest answer alive only that long and frees it on its next call.
-static __thread char *t_cache_value;
+// right after the getter returns, on this same thread. Each thread keeps its
+// latest answer alive only that long and frees it on its next call. The slot
+// is a thread key rather than __thread so the last answer is also freed when
+// the thread exits: the library's callback threads exit after idling.
+static pthread_key_t g_cache_value_key;
+static pthread_once_t g_cache_value_once = PTHREAD_ONCE_INIT;
+
+static void make_cache_value_key(void) { pthread_key_create(&g_cache_value_key, free); }
 
 static char *cache_lookup(jmethodID method, const char *key) {
     int attached;
@@ -134,12 +140,14 @@ static char *cache_lookup(jmethodID method, const char *key) {
     if (env == NULL) return NULL;
     jstring jkey = java_from_utf8(env, key);
     jstring value = (*env)->CallStaticObjectMethod(env, g_callbacks_class, method, jkey);
-    free(t_cache_value);
-    t_cache_value = (*env)->ExceptionCheck(env) ? NULL : utf8_from_java(env, value);
+    char *result = (*env)->ExceptionCheck(env) ? NULL : utf8_from_java(env, value);
     (*env)->DeleteLocalRef(env, jkey);
     (*env)->DeleteLocalRef(env, value);
     detach(env, attached);
-    return t_cache_value;
+    pthread_once(&g_cache_value_once, make_cache_value_key);
+    free(pthread_getspecific(g_cache_value_key));
+    pthread_setspecific(g_cache_value_key, result);
+    return result;
 }
 
 static int cache_store(jmethodID method, const char *key, const char *value, int64_t ttl_seconds) {
