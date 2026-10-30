@@ -168,6 +168,9 @@ func (t *Transport) DoStream(ctx context.Context, req *Request) (*StreamResponse
 	if err != nil {
 		return nil, NewRequestError("parse_url", "", "", "", err)
 	}
+	if err := checkScheme(parsedURL); err != nil {
+		return nil, err
+	}
 
 	// Snapshot the mutable fields once so a concurrent SetProxy/SetPreset/
 	// SetProtocol can't race the dispatch below (see transportSnapshot).

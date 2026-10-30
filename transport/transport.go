@@ -847,43 +847,52 @@ func NewTransportWithConfig(presetName string, proxy *ProxyConfig, config *Trans
 	t.h2Transport = NewHTTP2TransportWithConfig(preset, dnsCache, routing.tcpProxy, config)
 
 	// Create HTTP/3 transport - with UDP proxy support if applicable
-	if udpProxy := routing.udpProxyConfig(); udpProxy != nil {
-		udpProxyURL := routing.udpProxyURL
-		if isSOCKS5Proxy(udpProxyURL) {
-			// SOCKS5 supports UDP relay for HTTP/3
-			h3Transport, err := NewHTTP3TransportWithConfig(preset, dnsCache, udpProxy, config)
-			if err != nil {
-				// Store the error - don't silently fallback to direct connection!
-				// H3 requests will fail with explicit error instead of bypassing proxy
-				t.h3ProxyError = fmt.Errorf("SOCKS5 UDP proxy initialization failed: %w", err)
-				// Still create a basic H3 transport for non-proxied use cases
-				// but h3ProxyError will prevent it from being used when proxy is expected
-				t.h3Transport, _ = NewHTTP3TransportWithTransportConfig(preset, dnsCache, config)
-			} else {
-				t.h3Transport = h3Transport
-			}
-		} else if isMASQUEProxy(udpProxyURL) {
-			// MASQUE supports HTTP/3 through HTTP/3 proxy
-			h3Transport, err := NewHTTP3TransportWithMASQUE(preset, dnsCache, udpProxy, config)
-			if err != nil {
-				// Store the error - don't silently fallback to direct connection!
-				t.h3ProxyError = fmt.Errorf("MASQUE proxy initialization failed: %w", err)
-				t.h3Transport, _ = NewHTTP3TransportWithTransportConfig(preset, dnsCache, config)
-			} else {
-				t.h3Transport = h3Transport
-			}
-		} else {
-			// HTTP proxy - HTTP/3 doesn't work through HTTP proxies
-			// Store error so H3 requests fail explicitly
-			t.h3ProxyError = fmt.Errorf("HTTP proxy does not support HTTP/3 (QUIC requires UDP)")
-			t.h3Transport, _ = NewHTTP3TransportWithTransportConfig(preset, dnsCache, config)
-		}
-	} else {
-		// No proxy - HTTP/3 works directly
-		t.h3Transport, _ = NewHTTP3TransportWithTransportConfig(preset, dnsCache, config)
-	}
+	t.h3Transport, t.h3ProxyError = newHTTP3ForRouting(preset, dnsCache, routing, config)
 
 	return t
+}
+
+// newHTTP3ForRouting builds the HTTP/3 transport for a proxy routing, with
+// the session's transport config, and the error HTTP/3 requests must fail with
+// when the configured proxy cannot carry them (they fail rather than fall back
+// to a direct dial that would leak the real address).
+//
+// The constructor, SetProxy and SetPreset each used to build it themselves,
+// and only the constructor passed the config: after SetProxy or SetPreset,
+// HTTP/3 quietly lost the custom JA3, the ECH config domain, DisableECH, the
+// local address, the QUIC idle timeout and the session cache backend, while
+// HTTP/1.1 and HTTP/2 kept them.
+func newHTTP3ForRouting(preset *fingerprint.Preset, dnsCache *dns.Cache, routing proxyRouting, config *TransportConfig) (*HTTP3Transport, error) {
+	udpProxy := routing.udpProxyConfig()
+	if udpProxy == nil {
+		// No proxy - HTTP/3 works directly
+		h3, _ := NewHTTP3TransportWithTransportConfig(preset, dnsCache, config)
+		return h3, nil
+	}
+	var proxyErr error
+	switch {
+	case isSOCKS5Proxy(routing.udpProxyURL):
+		// SOCKS5 supports UDP relay for HTTP/3
+		h3, err := NewHTTP3TransportWithConfig(preset, dnsCache, udpProxy, config)
+		if err == nil {
+			return h3, nil
+		}
+		proxyErr = fmt.Errorf("SOCKS5 UDP proxy initialization failed: %w", err)
+	case isMASQUEProxy(routing.udpProxyURL):
+		// MASQUE supports HTTP/3 through HTTP/3 proxy
+		h3, err := NewHTTP3TransportWithMASQUE(preset, dnsCache, udpProxy, config)
+		if err == nil {
+			return h3, nil
+		}
+		proxyErr = fmt.Errorf("MASQUE proxy initialization failed: %w", err)
+	default:
+		// HTTP proxy - HTTP/3 doesn't work through HTTP proxies
+		proxyErr = fmt.Errorf("HTTP proxy does not support HTTP/3 (QUIC requires UDP)")
+	}
+	// Still create a basic H3 transport for non-proxied use cases; the stored
+	// error stops it being used when the proxy is expected.
+	h3, _ := NewHTTP3TransportWithTransportConfig(preset, dnsCache, config)
+	return h3, proxyErr
 }
 
 // SetProtocol sets the preferred protocol
@@ -966,34 +975,7 @@ func (t *Transport) SetProxy(proxy *ProxyConfig) {
 
 	// Recreate HTTP/3 - with proxy support if applicable. Keyed off the UDP proxy
 	// (UDPProxy, else the unified URL), so a split TCP/UDP config still gets H3.
-	var newH3 *HTTP3Transport
-	var newH3Err error
-	if h3Proxy := routing.udpProxyConfig(); h3Proxy != nil {
-		udpProxyURL := routing.udpProxyURL
-		if isSOCKS5Proxy(udpProxyURL) {
-			h3Transport, err := NewHTTP3TransportWithProxy(preset, t.dnsCache, h3Proxy)
-			if err != nil {
-				newH3Err = fmt.Errorf("SOCKS5 UDP proxy initialization failed: %w", err)
-				newH3, _ = NewHTTP3Transport(preset, t.dnsCache)
-			} else {
-				newH3 = h3Transport
-			}
-		} else if isMASQUEProxy(udpProxyURL) {
-			h3Transport, err := NewHTTP3TransportWithMASQUE(preset, t.dnsCache, h3Proxy, nil)
-			if err != nil {
-				newH3Err = fmt.Errorf("MASQUE proxy initialization failed: %w", err)
-				newH3, _ = NewHTTP3Transport(preset, t.dnsCache)
-			} else {
-				newH3 = h3Transport
-			}
-		} else {
-			// HTTP proxy does not support HTTP/3 (QUIC requires UDP)
-			newH3Err = fmt.Errorf("HTTP proxy does not support HTTP/3 (QUIC requires UDP)")
-			newH3, _ = NewHTTP3Transport(preset, t.dnsCache)
-		}
-	} else {
-		newH3, _ = NewHTTP3Transport(preset, t.dnsCache)
-	}
+	newH3, newH3Err := newHTTP3ForRouting(preset, t.dnsCache, routing, t.config)
 
 	// Re-apply insecureSkipVerify to the fresh transports before publishing them.
 	if t.insecureSkipVerify {
@@ -1062,33 +1044,7 @@ func (t *Transport) SetPreset(presetName string) {
 	newH2 := NewHTTP2TransportWithConfig(preset, t.dnsCache, routing.tcpProxy, t.config)
 
 	// Recreate HTTP/3 - with proxy support if applicable.
-	var newH3 *HTTP3Transport
-	var newH3Err error
-	if h3Proxy := routing.udpProxyConfig(); h3Proxy != nil {
-		udpProxyURL := routing.udpProxyURL
-		if isSOCKS5Proxy(udpProxyURL) {
-			h3Transport, err := NewHTTP3TransportWithProxy(preset, t.dnsCache, h3Proxy)
-			if err != nil {
-				newH3Err = fmt.Errorf("SOCKS5 UDP proxy initialization failed: %w", err)
-				newH3, _ = NewHTTP3Transport(preset, t.dnsCache)
-			} else {
-				newH3 = h3Transport
-			}
-		} else if isMASQUEProxy(udpProxyURL) {
-			h3Transport, err := NewHTTP3TransportWithMASQUE(preset, t.dnsCache, h3Proxy, nil)
-			if err != nil {
-				newH3Err = fmt.Errorf("MASQUE proxy initialization failed: %w", err)
-				newH3, _ = NewHTTP3Transport(preset, t.dnsCache)
-			} else {
-				newH3 = h3Transport
-			}
-		} else {
-			newH3Err = fmt.Errorf("HTTP proxy does not support HTTP/3 (QUIC requires UDP)")
-			newH3, _ = NewHTTP3Transport(preset, t.dnsCache)
-		}
-	} else {
-		newH3, _ = NewHTTP3Transport(preset, t.dnsCache)
-	}
+	newH3, newH3Err := newHTTP3ForRouting(preset, t.dnsCache, routing, t.config)
 
 	// Re-apply insecureSkipVerify to the fresh transports before publishing them.
 	if t.insecureSkipVerify {
@@ -1421,12 +1377,32 @@ func (t *Transport) getPreset() *fingerprint.Preset {
 	return p
 }
 
+// checkScheme refuses a URL that is not http or https. Anything else used to go
+// out as plain HTTP, since the dispatch only asks whether the scheme is
+// "https": ftps://host/ was fetched unencrypted, and a redirect to ftp:// was
+// followed the same way. url.Parse has already lowercased the scheme.
+func checkScheme(u *url.URL) error {
+	switch u.Scheme {
+	case "http", "https":
+		return nil
+	case "":
+		return NewRequestError("parse_url", u.Host, "", "",
+			fmt.Errorf("unsupported protocol scheme in %q: the URL needs http:// or https://", u.String()))
+	default:
+		return NewRequestError("parse_url", u.Host, "", "",
+			fmt.Errorf("unsupported protocol scheme %q", u.Scheme))
+	}
+}
+
 // Do executes an HTTP request
 func (t *Transport) Do(ctx context.Context, req *Request) (*Response, error) {
 	// Parse URL to determine scheme
 	parsedURL, err := url.Parse(req.URL)
 	if err != nil {
 		return nil, NewRequestError("parse_url", "", "", "", err)
+	}
+	if err := checkScheme(parsedURL); err != nil {
+		return nil, err
 	}
 
 	// Snapshot the mutable fields once so a concurrent SetProxy/SetPreset/
@@ -3454,7 +3430,17 @@ func readBodyOptimized(body io.Reader, contentLength int64) ([]byte, error) {
 	if contentLength > 0 {
 		buf := make([]byte, contentLength)
 		n, err := io.ReadFull(body, buf)
-		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		// A body that stops short of its Content-Length was cut off: the
+		// connection closed early. It used to be returned as if whole, so a
+		// truncated download looked like a successful one; Chrome fails the
+		// same response with ERR_CONTENT_LENGTH_MISMATCH. A plain EOF with
+		// nothing read is a response with no body at all (HEAD, 204, 304),
+		// which still declares the length the full response would have.
+		if err == io.ErrUnexpectedEOF {
+			return nil, fmt.Errorf("%w: the body ended after %d of the %d bytes its Content-Length announced",
+				err, n, contentLength)
+		}
+		if err != nil && err != io.EOF {
 			return nil, err
 		}
 		return buf[:n], nil
