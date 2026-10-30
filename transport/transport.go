@@ -23,6 +23,7 @@ import (
 	"github.com/sardanioss/httpcloak/internal/compress"
 	"github.com/sardanioss/httpcloak/internal/gunzip"
 	"github.com/sardanioss/httpcloak/protocol"
+	"golang.org/x/net/publicsuffix"
 )
 
 // Protocol represents the HTTP protocol version
@@ -2996,16 +2997,28 @@ func applyPresetHeaders(httpReq *http.Request, wire *presetWireHeaders, customHe
 			userMode := headerVal(userHeaders, "Sec-Fetch-Mode")
 			userDest := headerVal(userHeaders, "Sec-Fetch-Dest")
 			userSite := headerVal(userHeaders, "Sec-Fetch-Site")
-			httpReq.Header["Sec-Fetch-Mode"] = []string{cmp.Or(userMode, "cors")}
-			httpReq.Header["Sec-Fetch-Dest"] = []string{cmp.Or(userDest, "empty")}
-			httpReq.Header["Sec-Fetch-Site"] = []string{cmp.Or(userSite, "cross-site")}
+			mode := cmp.Or(userMode, "cors")
+			dest := cmp.Or(userDest, "empty")
+			// The Referer names the page that made the call, which decides
+			// Sec-Fetch-Site and the Origin. Without one the page is unknown,
+			// and cross-site, the old default, is the reading that claims
+			// least.
+			referer := headerVal(userHeaders, "Referer")
+			site := subresourceFetchSite(referer, httpReq.URL)
+			httpReq.Header["Sec-Fetch-Mode"] = []string{mode}
+			httpReq.Header["Sec-Fetch-Dest"] = []string{dest}
+			httpReq.Header["Sec-Fetch-Site"] = []string{cmp.Or(userSite, site)}
 			delete(httpReq.Header, "Sec-Fetch-User")
 			delete(httpReq.Header, "Upgrade-Insecure-Requests")
-			// Real browsers send Accept: */* on fetch()/XHR unless the user
-			// explicitly asked for something else — no user Accept means swap
-			// the navigation Accept (text/html,...) for the CORS default.
+			if origin := requestOrigin(referer, mode, cmp.Or(userSite, site), httpReq.Method); origin != "" && headerVal(userHeaders, "Origin") == "" {
+				httpReq.Header["Origin"] = []string{origin}
+			}
+			// Real browsers send Accept: */* on fetch()/XHR, and a per-type
+			// Accept on no-cors subresource loads, unless the user explicitly
+			// asked for something else — no user Accept means swap the
+			// navigation Accept (text/html,...) for the one this load sends.
 			if headerVal(userHeaders, "Accept") == "" {
-				httpReq.Header["Accept"] = []string{"*/*"}
+				httpReq.Header["Accept"] = []string{subresourceAccept(preset, mode, dest)}
 			}
 			// CORS uses u=1,i priority (lower urgency than navigation's u=0,i)
 			// — used as the static fallback when the preset has no per-dest
@@ -3152,6 +3165,66 @@ func sniffXHRMode(method string, userHeaders map[string][]string) bool {
 	// POSTs from scrapers are overwhelmingly API calls; form submissions
 	// always carry one of the form Content-Types handled above.
 	return true
+}
+
+// subresourceFetchSite is the Sec-Fetch-Site of a fetch() or subresource load
+// made by the page at referer: same-origin, same-site (the same registrable
+// domain, by the public suffix list, and scheme) or cross-site. Without a
+// readable referer the page is unknown, and it is cross-site.
+func subresourceFetchSite(referer string, target *url.URL) string {
+	page, err := url.Parse(referer)
+	if referer == "" || err != nil || page.Host == "" || target == nil {
+		return "cross-site"
+	}
+	if page.Scheme == target.Scheme && strings.EqualFold(page.Host, target.Host) {
+		return "same-origin"
+	}
+	if page.Scheme == target.Scheme && strings.EqualFold(registrableDomain(page.Hostname()), registrableDomain(target.Hostname())) {
+		return "same-site"
+	}
+	return "cross-site"
+}
+
+// registrableDomain is host's eTLD+1 (www.example.co.uk is example.co.uk), or
+// the host itself where it has none, as an IP address does.
+func registrableDomain(host string) string {
+	if domain, err := publicsuffix.EffectiveTLDPlusOne(host); err == nil {
+		return domain
+	}
+	return host
+}
+
+// requestOrigin is the Origin a browser sends with a request from the page at
+// referer, by the Fetch standard: with every CORS request that leaves the
+// page's origin, and with every request whose method is not GET or HEAD.
+// Without a referer the page's origin is unknown, and no Origin is invented.
+func requestOrigin(referer, mode, site, method string) string {
+	page, err := url.Parse(referer)
+	if referer == "" || err != nil || page.Scheme == "" || page.Host == "" {
+		return ""
+	}
+	readOnly := method == "" || method == http.MethodGet || method == http.MethodHead
+	if readOnly && (mode != "cors" || site == "same-origin") {
+		return ""
+	}
+	return page.Scheme + "://" + page.Host
+}
+
+// subresourceAccept is the Accept Chrome sends with a request of this mode and
+// destination: */* on fetch(), and on a no-cors load the destination's own,
+// such as the preset's image Accept on an <img>.
+func subresourceAccept(preset *fingerprint.Preset, mode, dest string) string {
+	if mode != "no-cors" {
+		return "*/*"
+	}
+	switch dest {
+	case "image":
+		return preset.ResolveImageAccept()
+	case "style":
+		return "text/css,*/*;q=0.1"
+	default:
+		return "*/*"
+	}
 }
 
 func headerVal(h map[string][]string, name string) string {

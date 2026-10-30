@@ -2,6 +2,7 @@ package transport
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"reflect"
 	"sort"
@@ -26,7 +27,8 @@ import (
 // TLS-only mode and stripped client hints.
 //
 // The frozen functions below are that pre-merge code, renamed, and must not
-// be edited: they are the reference.
+// be edited: they are the reference. Changes made to the pipeline on purpose
+// since then are applied to their output by laterChanges.
 func TestHeaderPipelineMatchesThePreviousOne(t *testing.T) {
 	tr := NewTransport("chrome-latest")
 	defer tr.Close()
@@ -76,6 +78,7 @@ func TestHeaderPipelineMatchesThePreviousOne(t *testing.T) {
 								}
 								old, cur := mk(), mk()
 								frozenApplyPresetHeaders(old, preset, order, nil, tlsOnly, proto, req.Headers, strip, exact)
+								laterChanges(old.Header, preset, tlsOnly, req, exact)
 								frozenMergeCallerHeaders(old, req)
 								applyPresetHeaders(cur, tr.wireHeaders(preset), order, nil, tlsOnly, proto, req.Headers, strip, exact)
 								mergeCallerHeaders(cur, req)
@@ -112,6 +115,24 @@ func TestHeaderPipelineMatchesThePreviousOne(t *testing.T) {
 		}
 	}
 	t.Logf("%d request cases identical", cases)
+}
+
+// laterChanges applies to the frozen pipeline's output what has changed in the
+// pipeline on purpose since it was frozen, each change tested on its own:
+//
+//   - A no-cors load sends its destination's Accept, the image Accept on an
+//     image (TestApplyPresetHeadersDerivesSubresourceContext). The same change
+//     takes a fetch()'s Sec-Fetch-Site and Origin from its Referer, which no
+//     shape here sends on a fetch().
+func laterChanges(h http.Header, preset *fingerprint.Preset, tlsOnly bool, req *Request, exact []fingerprint.HeaderPair) {
+	if tlsOnly || len(exact) > 0 || !presetSendsSecFetch(preset) || !sniffXHRMode(req.Method, req.Headers) {
+		return
+	}
+	if headerVal(req.Headers, "Accept") == "" {
+		mode := cmp.Or(headerVal(req.Headers, "Sec-Fetch-Mode"), "cors")
+		dest := cmp.Or(headerVal(req.Headers, "Sec-Fetch-Dest"), "empty")
+		h["Accept"] = []string{subresourceAccept(preset, mode, dest)}
+	}
 }
 
 func dumpHeader(h http.Header) string {
