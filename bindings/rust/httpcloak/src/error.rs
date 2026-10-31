@@ -215,8 +215,9 @@ pub(crate) fn io_kind(e: &Error) -> io::ErrorKind {
         ErrorKind::Timeout => io::ErrorKind::TimedOut,
         ErrorKind::InvalidInput => io::ErrorKind::InvalidInput,
         ErrorKind::Decode => io::ErrorKind::InvalidData,
-        ErrorKind::Connect if has("connection refused") => io::ErrorKind::ConnectionRefused,
-        ErrorKind::Connect if has("connection reset") => io::ErrorKind::ConnectionReset,
+        // Or as Windows words them (WSAECONNREFUSED, WSAECONNRESET).
+        ErrorKind::Connect if has("connection refused") || has("actively refused") => io::ErrorKind::ConnectionRefused,
+        ErrorKind::Connect if has("connection reset") || has("forcibly closed") => io::ErrorKind::ConnectionReset,
         ErrorKind::Connect if has("broken pipe") => io::ErrorKind::BrokenPipe,
         ErrorKind::Connect if has("eof") => io::ErrorKind::UnexpectedEof,
         ErrorKind::Connect => io::ErrorKind::ConnectionAborted,
@@ -287,6 +288,13 @@ pub(crate) fn classify(message: &str, hosts: &[String]) -> ErrorKind {
         "connection error",
         "dial",
         "eof",
+        // Windows' wording of refused, reset, aborted (its broken pipe) and unreachable.
+        "actively refused",
+        // (Its messages end in a full stop, which a host name could go on
+        // with, so the phrases stop short of their last word.)
+        "forcibly closed by the remote",
+        "established connection was aborted",
+        "attempted to an unreachable",
     ]) || op.as_deref() == Some("dial")
     {
         return ErrorKind::Connect;
@@ -388,6 +396,11 @@ mod tests {
             ("read_body x.com [h2]: context deadline exceeded", ErrorKind::Timeout),
             ("decompress x.com [h2]: gzip: invalid header", ErrorKind::Decode),
             ("something else entirely", ErrorKind::Other),
+            // Windows' wording, as Go reports the WSA errors.
+            ("dial 127.0.0.1:1 [h1]: dial tcp4 127.0.0.1:1: connectex: No connection could be made because the target machine actively refused it.", ErrorKind::Connect),
+            ("the upload failed: request 127.0.0.1:53499 [h1]: write tcp4 127.0.0.1:53514->127.0.0.1:53499: wsasend: An established connection was aborted by the software in your host machine.", ErrorKind::Connect),
+            ("roundtrip 127.0.0.1:1 [h1]: read tcp4 127.0.0.1:2->127.0.0.1:1: wsarecv: An existing connection was forcibly closed by the remote host.", ErrorKind::Connect),
+            ("dial 10.9.9.9:80 [h1]: dial tcp4 10.9.9.9:80: connectex: A socket operation was attempted to an unreachable network.", ErrorKind::Connect),
             // Host names that spell the words looked for must not decide it.
             ("dial tls.peet.ws [h2]: dial tcp 1.2.3.4:443: connect: connection refused", ErrorKind::Connect),
             ("dial proxy-1.example.net [h1]: connect: connection refused", ErrorKind::Connect),
@@ -397,6 +410,23 @@ mod tests {
         for (message, kind) in cases {
             assert_eq!(classify(message, &[]), kind, "{message}");
         }
+    }
+
+    #[test]
+    fn windows_socket_errors_map_as_std_maps_their_codes() {
+        let io = |message: &str| io_kind(&Error::new(classify(message, &[]), message));
+        assert_eq!(
+            io("connectex: No connection could be made because the target machine actively refused it."),
+            io::ErrorKind::ConnectionRefused
+        );
+        assert_eq!(
+            io("wsarecv: An existing connection was forcibly closed by the remote host."),
+            io::ErrorKind::ConnectionReset
+        );
+        assert_eq!(
+            io("wsasend: An established connection was aborted by the software in your host machine."),
+            io::ErrorKind::ConnectionAborted
+        );
     }
 
     #[test]

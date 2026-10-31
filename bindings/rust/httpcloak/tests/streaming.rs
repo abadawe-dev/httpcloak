@@ -178,8 +178,18 @@ fn an_early_answer_ends_the_upload_with_that_answer() {
     // write may succeed; either way finish() has the server's answer.
     // The server hanging up may surface as the response or as the broken
     // pipe, depending on which the library sees first; neither may hang.
+    // Windows has no broken pipe for sockets: a write after the server hung
+    // up fails as aborted (WSAECONNABORTED) or reset.
     if let Err(e) = result {
-        assert!(matches!(e.kind(), std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::ConnectionReset), "{e:?}");
+        assert!(
+            matches!(
+                e.kind(),
+                std::io::ErrorKind::BrokenPipe
+                    | std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::ConnectionAborted
+            ),
+            "{e:?}"
+        );
     }
     match upload.finish() {
         Ok(r) => assert_eq!(r.status(), 413),
