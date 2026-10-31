@@ -45,9 +45,15 @@ points the build at `bindings/clib` from elsewhere, and `GO` at a particular Go
 binary.
 
 Supported: Linux, macOS and Windows with the GNU toolchain. A Go archive cannot
-be linked by MSVC, so `*-windows-msvc` needs `HTTPCLOAK_LIB_DIR` and a DLL with
-an import library. Cross-compiling uses the C compiler cargo would
-(`CC_<target>`).
+be linked by MSVC, so `*-windows-msvc` links the DLL
+(`libhttpcloak-windows-amd64.dll`, as `bindings/clib/build.sh` builds it)
+through an import library, `httpcloak.lib`, both in `HTTPCLOAK_LIB_DIR`. Make
+the import library in a Developer Command Prompt: write `httpcloak.def` with the
+line `LIBRARY libhttpcloak-windows-amd64.dll`, then `EXPORTS`, then the names
+`dumpbin /exports` lists, one per line, and run
+`lib /def:httpcloak.def /out:httpcloak.lib /machine:x64`. The DLL must be on
+`PATH` or next to the binary at run time. Cross-compiling uses the C compiler
+cargo would (`CC_<target>`).
 
 ## Using it
 
