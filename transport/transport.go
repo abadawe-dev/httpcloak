@@ -3029,6 +3029,17 @@ func applyPresetHeaders(httpReq *http.Request, wire *presetWireHeaders, customHe
 			if p := httpReq.Header["Priority"]; len(p) > 0 && p[0] != "" {
 				httpReq.Header["Priority"] = []string{"u=1, i"}
 			}
+		} else if referer := headerVal(userHeaders, "Referer"); wire.sendsSecFetch && referer != "" {
+			// A navigation that names a page in its Referer was started on that
+			// page: a link followed or a form submitted there. Its Sec-Fetch-Site
+			// is the page's relation to the target, as on a fetch(), and a form
+			// that is not a GET also carries the page's Origin. Without a Referer
+			// the navigation was typed or opened from outside, and stays "none".
+			site := cmp.Or(headerVal(userHeaders, "Sec-Fetch-Site"), subresourceFetchSite(referer, httpReq.URL))
+			httpReq.Header["Sec-Fetch-Site"] = []string{site}
+			if origin := requestOrigin(referer, "navigate", site, httpReq.Method); origin != "" && headerVal(userHeaders, "Origin") == "" {
+				httpReq.Header["Origin"] = []string{origin}
+			}
 		}
 
 		// Per-resource-type priority: HTTP header. Chrome 147+ desktop emits

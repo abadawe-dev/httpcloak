@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"fmt"
+	"net/url"
 	"reflect"
 	"sort"
 	"strings"
@@ -124,8 +125,22 @@ func TestHeaderPipelineMatchesThePreviousOne(t *testing.T) {
 //     image (TestApplyPresetHeadersDerivesSubresourceContext). The same change
 //     takes a fetch()'s Sec-Fetch-Site and Origin from its Referer, which no
 //     shape here sends on a fetch().
+//   - A navigation with a Referer takes its Sec-Fetch-Site from it, and one
+//     that is not a GET carries the page's Origin
+//     (TestApplyPresetHeadersDerivesNavigationSite).
 func laterChanges(h http.Header, preset *fingerprint.Preset, tlsOnly bool, req *Request, exact []fingerprint.HeaderPair) {
-	if tlsOnly || len(exact) > 0 || !presetSendsSecFetch(preset) || !sniffXHRMode(req.Method, req.Headers) {
+	if tlsOnly || len(exact) > 0 || !presetSendsSecFetch(preset) {
+		return
+	}
+	if !sniffXHRMode(req.Method, req.Headers) {
+		if referer := headerVal(req.Headers, "Referer"); referer != "" {
+			u, _ := url.Parse(req.URL)
+			site := cmp.Or(headerVal(req.Headers, "Sec-Fetch-Site"), subresourceFetchSite(referer, u))
+			h["Sec-Fetch-Site"] = []string{site}
+			if origin := requestOrigin(referer, "navigate", site, req.Method); origin != "" && headerVal(req.Headers, "Origin") == "" {
+				h["Origin"] = []string{origin}
+			}
+		}
 		return
 	}
 	if headerVal(req.Headers, "Accept") == "" {

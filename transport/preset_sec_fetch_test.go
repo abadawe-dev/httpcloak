@@ -260,3 +260,63 @@ func TestApplyPresetHeadersDerivesSubresourceContext(t *testing.T) {
 		})
 	}
 }
+
+// A navigation started on a page (a link followed, a form submitted) takes its
+// Sec-Fetch-Site from the page its Referer names, and a form POST carries the
+// page's Origin, as Chrome's do. One without a Referer was typed and says none.
+func TestApplyPresetHeadersDerivesNavigationSite(t *testing.T) {
+	preset := fingerprint.GetStrict("chrome-latest")
+	tests := []struct {
+		name                         string
+		method, url                  string
+		user                         map[string][]string
+		site, origin, userActivation string
+	}{
+		{
+			name:   "typed navigation",
+			method: "GET", url: "https://shop.example.com/checkout",
+			user: map[string][]string{"Sec-Fetch-Mode": {"navigate"}},
+			site: "none", origin: "", userActivation: "?1",
+		},
+		{
+			name:   "link followed on the same site",
+			method: "GET", url: "https://shop.example.com/checkout",
+			user: map[string][]string{"Sec-Fetch-Mode": {"navigate"}, "Referer": {"https://shop.example.com/cart"}},
+			site: "same-origin", origin: "", userActivation: "?1",
+		},
+		{
+			name:   "form posted on the same origin",
+			method: "POST", url: "https://shop.example.com/checkpoint",
+			user: map[string][]string{"Sec-Fetch-Mode": {"navigate"}, "Content-Type": {"application/x-www-form-urlencoded"}, "Referer": {"https://shop.example.com/checkpoint?return_to=x"}},
+			site: "same-origin", origin: "https://shop.example.com", userActivation: "?1",
+		},
+		{
+			name:   "link followed from another site",
+			method: "GET", url: "https://shop.example.com/products/x",
+			user: map[string][]string{"Sec-Fetch-Mode": {"navigate"}, "Referer": {"https://www.google.com/"}},
+			site: "cross-site", origin: "", userActivation: "?1",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequest(tt.method, tt.url, nil)
+			if err != nil {
+				t.Fatalf("NewRequest: %v", err)
+			}
+			applyPresetHeaders(req, newPresetWireHeaders(preset), nil, nil, false, "h2", tt.user, false, nil)
+			mergeCallerHeaders(req, &Request{Method: tt.method, URL: tt.url, Headers: tt.user})
+			if got := req.Header.Get("Sec-Fetch-Site"); got != tt.site {
+				t.Errorf("Sec-Fetch-Site = %q, want %q", got, tt.site)
+			}
+			if got := req.Header.Get("Origin"); got != tt.origin {
+				t.Errorf("Origin = %q, want %q", got, tt.origin)
+			}
+			if got := req.Header.Get("Sec-Fetch-User"); got != tt.userActivation {
+				t.Errorf("Sec-Fetch-User = %q, want %q", got, tt.userActivation)
+			}
+			if got := req.Header.Get("Sec-Fetch-Mode"); got != "navigate" {
+				t.Errorf("Sec-Fetch-Mode = %q, want navigate", got)
+			}
+		})
+	}
+}
