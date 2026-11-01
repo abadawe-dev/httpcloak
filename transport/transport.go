@@ -3111,7 +3111,7 @@ func applyPresetHeaders(httpReq *http.Request, wire *presetWireHeaders, customHe
 	// run, and the priority table a few lines up reads the same field.
 	httpReq.Header[http.HeaderOrderKey] = CompleteHeaderOrder(
 		customHeaderOrder,
-		preset.H2HeaderOrderFor(httpReq.Header.Get("Sec-Fetch-Dest")),
+		preset.H2HeaderOrderFor(httpReq.Header.Get("Sec-Fetch-Dest"), httpReq.Header.Get("Sec-Purpose")),
 		httpReq.Header, userHeaders)
 
 	// Set pseudo-header order: custom (Akamai) > preset H2Config > heuristic
