@@ -89,7 +89,9 @@ proptest! {
         match session().get(http("/echo")).header(name.clone(), value.clone()).send() {
             Ok(r) => {
                 let got = echoed_header(&echo(&r), &name);
-                prop_assert_eq!(got.as_deref(), Some(value.trim_matches(|c| c == ' ' || c == '\t')));
+                // A value that is empty once trimmed asks for no such header.
+                let sent = value.trim_matches(|c| c == ' ' || c == '\t');
+                prop_assert_eq!(got.as_deref(), (!sent.is_empty()).then_some(sent));
             }
             Err(e) => prop_assert!(e.is_invalid_input(), "{:?}", e),
         }
@@ -114,4 +116,12 @@ proptest! {
         let want: Vec<String> = pairs.iter().map(|(k, v)| format!("{k}: {v}")).collect();
         prop_assert_eq!(lines, want);
     }
+}
+
+#[test]
+fn an_empty_value_leaves_the_header_off() {
+    let r = session().get(http("/echo")).header("Accept-Language", "").header("X-Kept", "1").send().unwrap();
+    let sent = echo(&r);
+    assert_eq!(echoed_header(&sent, "accept-language"), None, "the preset's is left off too");
+    assert_eq!(echoed_header(&sent, "x-kept").as_deref(), Some("1"));
 }

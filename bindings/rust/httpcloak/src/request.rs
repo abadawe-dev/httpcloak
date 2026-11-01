@@ -116,8 +116,11 @@ impl RequestBuilder {
 
     /// Sets header `name`, replacing any value set before under any spelling
     /// of the name. Spaces and tabs around the value are dropped, as a
-    /// browser drops them. To send a name more than once, or headers exactly
-    /// as given, use [`exact_headers`](RequestBuilder::exact_headers).
+    /// browser drops them. A value that is empty after that sends no `name`
+    /// at all, which is how to leave off a header the preset adds (Chrome
+    /// sends no `Priority` with an async script, say). To send a name more
+    /// than once, or headers exactly as given, use
+    /// [`exact_headers`](RequestBuilder::exact_headers).
     pub fn header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         let (name, value) = (name.into(), normalize_value(value.into()));
         if !valid_name(&name) {
