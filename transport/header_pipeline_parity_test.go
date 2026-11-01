@@ -81,6 +81,7 @@ func TestHeaderPipelineMatchesThePreviousOne(t *testing.T) {
 								frozenApplyPresetHeaders(old, preset, order, nil, tlsOnly, proto, req.Headers, strip, exact)
 								laterChanges(old.Header, preset, tlsOnly, req, exact)
 								frozenMergeCallerHeaders(old, req)
+								laterMergeChanges(old.Header, req)
 								applyPresetHeaders(cur, tr.wireHeaders(preset), order, nil, tlsOnly, proto, req.Headers, strip, exact)
 								mergeCallerHeaders(cur, req)
 								cases++
@@ -147,6 +148,21 @@ func laterChanges(h http.Header, preset *fingerprint.Preset, tlsOnly bool, req *
 		mode := cmp.Or(headerVal(req.Headers, "Sec-Fetch-Mode"), "cors")
 		dest := cmp.Or(headerVal(req.Headers, "Sec-Fetch-Dest"), "empty")
 		h["Accept"] = []string{subresourceAccept(preset, mode, dest)}
+	}
+}
+
+// laterMergeChanges applies to the frozen merge's output what has changed in it
+// on purpose since: a caller header whose only value is "" is removed rather
+// than sent empty, as the headers documentation says
+// (TestMergeCallerHeadersEmptyValueRemoves). Exact mode still merges nothing.
+func laterMergeChanges(h http.Header, req *Request) {
+	if len(req.ExactHeaders) > 0 {
+		return
+	}
+	for key, values := range req.Headers {
+		if len(values) == 1 && values[0] == "" {
+			delete(h, http.CanonicalHeaderKey(key))
+		}
 	}
 }
 

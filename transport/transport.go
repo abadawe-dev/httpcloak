@@ -2845,7 +2845,10 @@ func applyExactHeaders(httpReq *http.Request, exact []fingerprint.HeaderPair, pr
 
 // mergeCallerHeaders folds Request.Headers over whatever the preset pipeline
 // produced. The first value replaces, the rest append, so a caller can both
-// override a preset header and send one name twice.
+// override a preset header and send one name twice. A name whose only value is
+// "" is removed instead: that is how a caller drops a header the preset would
+// send (the Priority Chrome leaves off an async script, say), as the headers
+// documentation promises. An empty field is nothing a browser puts on the wire.
 //
 // It is a no-op under ExactHeaders. That mode promises the wire carries the
 // listed pairs and nothing else, and req.Headers is not only what the caller
@@ -2875,6 +2878,10 @@ func mergeCallerHeaders(httpReq *http.Request, req *Request) {
 	backing := make([]string, 0, len(req.Headers))
 	for key, values := range req.Headers {
 		if len(values) == 0 {
+			continue
+		}
+		if len(values) == 1 && values[0] == "" {
+			delete(httpReq.Header, canonicalHeaderName(key))
 			continue
 		}
 		start := len(backing)
