@@ -2471,7 +2471,7 @@ func (t *Transport) roundTripHTTP3(ctx context.Context, h3 *HTTP3Transport, http
 	// window with room to spare, so a tight deadline keeps its single full attempt.
 	replayable := req.BodyReader == nil
 	if !replayable || !hasDeadline || time.Until(deadline) <= h3StallWindow+time.Second {
-		resp, err := h3.RoundTrip(httpReq)
+		resp, err := h3.roundTrip(httpReq)
 		return resp, noop, err
 	}
 	// Whether the first attempt may go again even if it was written.
@@ -2490,7 +2490,7 @@ func (t *Transport) roundTripHTTP3(ctx context.Context, h3 *HTTP3Transport, http
 	attemptCtx, cancelAttempt := context.WithCancel(ctx)
 	done := make(chan rtResult, 1)
 	go func() {
-		resp, err := h3.RoundTrip(httpReq.WithContext(attemptCtx))
+		resp, err := h3.roundTrip(httpReq.WithContext(attemptCtx))
 		done <- rtResult{resp, err}
 	}()
 
@@ -2554,7 +2554,7 @@ func (t *Transport) roundTripHTTP3(ctx context.Context, h3 *HTTP3Transport, http
 	if req.BodyReader == nil && len(req.Body) > 0 {
 		retryReq.Body = io.NopCloser(bytes.NewReader(req.Body))
 	}
-	resp, err := h3.RoundTrip(retryReq)
+	resp, err := h3.roundTrip(retryReq)
 	return resp, noop, err
 }
 
