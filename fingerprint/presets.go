@@ -82,6 +82,11 @@ type Preset struct {
 	Headers              map[string]string // For backward compatibility
 	HeaderOrder          []HeaderPair      // Ordered headers for HTTP/2
 
+	// ZeroContentLengthMethods names the methods whose requests say
+	// "content-length: 0" when they carry no body. Empty means Chrome's and
+	// Firefox's rule; see ResolveZeroContentLengthMethods.
+	ZeroContentLengthMethods []string
+
 	// ImageAccept is the Accept header Chrome sends on image loads. Empty
 	// means the pre-155 value; see ResolveImageAccept.
 	ImageAccept    string
@@ -1312,6 +1317,13 @@ func firefoxPriorityTable() map[string]ResourcePriority {
 		"iframe":   {Urgency: 4, EmitHeader: true, Weight: 22},
 		"empty":    {Urgency: 4, EmitHeader: true, Weight: 22},
 	}
+}
+
+// safariZeroContentLengthMethods is the Apple network stack's rule for a
+// request with no body, which Safari and every iOS browser share. See
+// ResolveZeroContentLengthMethods.
+func safariZeroContentLengthMethods() []string {
+	return []string{"POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 }
 
 // safariH2Config returns the explicit H2 fingerprint config for Safari/WebKit presets.
@@ -2650,6 +2662,8 @@ func Safari18() *Preset {
 		H2Config:       safariH2Config(),
 		H3Config:       safariH3Config(),
 		SupportHTTP3:   true,
+
+		ZeroContentLengthMethods: safariZeroContentLengthMethods(),
 	}
 }
 
@@ -3414,6 +3428,8 @@ func IOSChrome143() *Preset {
 		H2Config:       safariH2Config(),
 		H3Config:       safariH3Config(),
 		SupportHTTP3:   true,
+
+		ZeroContentLengthMethods: safariZeroContentLengthMethods(),
 	}
 }
 
@@ -3465,6 +3481,8 @@ func IOSChrome144() *Preset {
 		H2Config:       safariH2Config(),
 		H3Config:       safariH3Config(),
 		SupportHTTP3:   true,
+
+		ZeroContentLengthMethods: safariZeroContentLengthMethods(),
 	}
 }
 
@@ -3515,6 +3533,8 @@ func IOSChrome145() *Preset {
 		H2Config:       safariH2Config(),
 		H3Config:       safariH3Config(),
 		SupportHTTP3:   true,
+
+		ZeroContentLengthMethods: safariZeroContentLengthMethods(),
 	}
 }
 
@@ -3561,6 +3581,8 @@ func IOSSafari17() *Preset {
 		H2Config:       safariH2Config(),
 		H3Config:       safariH3Config(),
 		SupportHTTP3:   false, // iOS Safari 17 doesn't have proper H3 TLS spec
+
+		ZeroContentLengthMethods: safariZeroContentLengthMethods(),
 	}
 }
 
@@ -3610,6 +3632,8 @@ func IOSSafari18() *Preset {
 		H2Config:       safariH2Config(),
 		H3Config:       safariH3Config(),
 		SupportHTTP3:   true,
+
+		ZeroContentLengthMethods: safariZeroContentLengthMethods(),
 	}
 }
 
@@ -3776,6 +3800,8 @@ func IOSChrome146() *Preset {
 		H2Config:       safariH2Config(),
 		H3Config:       safariH3Config(),
 		SupportHTTP3:   true,
+
+		ZeroContentLengthMethods: safariZeroContentLengthMethods(),
 	}
 }
 
