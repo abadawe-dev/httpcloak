@@ -1553,11 +1553,15 @@ func (t *HTTP1Transport) writeHeadersInOrder(w *bufio.Writer, req *http.Request,
 				// Skip Content-Length when using chunked encoding
 				continue
 			}
-			// First check if header is set
-			if values, ok := req.Header[canonicalKey]; ok {
-				for _, v := range values {
-					fmt.Fprintf(w, "%s: %s\r\n", canonicalKey, v)
+			// ExactHeaders retains the caller's casing in the map. Resolve
+			// that entry before deriving framing from the body, and consume
+			// only this order slot just as for other explicit headers.
+			if mapKey, ok := resolveHeaderKey(req.Header, key); ok {
+				for _, v := range valuesForSlot(req.Header[mapKey], slots[mapKey], cursor[mapKey]) {
+					fmt.Fprintf(w, "%s: %s\r\n", mapKey, v)
 				}
+				cursor[mapKey]++
+				written[mapKey] = true
 				written[canonicalKey] = true
 			} else if req.ContentLength > 0 {
 				// Fallback to ContentLength field
