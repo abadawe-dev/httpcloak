@@ -119,6 +119,14 @@ func retryDial[T any](parent context.Context, attempts int, attemptTimeout time.
 		if errors.As(err, &alpnErr) {
 			return zero, err
 		}
+		// Authentication and other client refusals cannot improve by redialing
+		// the same proxy with the same request. Keep the typed status instead
+		// of hiding it behind a later dial failure. Request timeout and throttling
+		// may be transient (408 explicitly permits retrying a fresh connection).
+		var proxyStatus *ProxyStatusError
+		if errors.As(err, &proxyStatus) && proxyStatus.StatusCode >= 400 && proxyStatus.StatusCode < 500 && proxyStatus.StatusCode != 408 && proxyStatus.StatusCode != 429 {
+			return zero, err
+		}
 		lastErr = err
 		if attempt < attempts-1 {
 			select {
