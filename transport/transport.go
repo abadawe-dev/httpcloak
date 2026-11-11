@@ -233,9 +233,10 @@ type Request struct {
 	// takes on responsibility for the entire request shape, including the
 	// headers a browser would always send.
 	//
-	// Host on HTTP/1.1 and the pseudo-header block on HTTP/2 and HTTP/3 are
-	// still written for you, because they are protocol framing rather than
-	// caller headers. Connection is not: a capture that carries none cannot
+	// Host on HTTP/1.1 is supplied when omitted; when explicitly listed, its
+	// supplied slot, value and casing are retained. The pseudo-header block on
+	// HTTP/2 and HTTP/3 is still written as protocol framing. Connection is
+	// only supplied when listed, in its own slot: a capture carrying none cannot
 	// have one added back, and HTTP/1.1 keeps the connection alive by default
 	// anyway, so nothing is lost by leaving it out.
 	ExactHeaders []fingerprint.HeaderPair

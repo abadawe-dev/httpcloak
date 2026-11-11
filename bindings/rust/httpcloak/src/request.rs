@@ -198,7 +198,9 @@ impl RequestBuilder {
     /// body helper. For reproducing a captured request.
     ///
     /// Only the protocol's framing is still written for you: `Host` on
-    /// HTTP/1.1 and the pseudo-headers on HTTP/2 and HTTP/3. Cannot be
+    /// HTTP/1.1 when omitted, and the pseudo-headers on HTTP/2 and HTTP/3.
+    /// An explicit HTTP/1.1 `Host` pair keeps its supplied position, value and
+    /// casing, as does `Connection`. Cannot be
     /// combined with [`header`](RequestBuilder::header),
     /// [`cookie`](RequestBuilder::cookie) or the auth helpers.
     pub fn exact_headers<I, K, V>(mut self, headers: I) -> Self

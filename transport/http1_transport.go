@@ -1286,12 +1286,17 @@ func (t *HTTP1Transport) writeRequest(conn *http1Conn, req *http.Request) error 
 	}
 	fmt.Fprintf(conn.bw, "%s %s HTTP/1.1\r\n", req.Method, uri)
 
-	// Host header first (browser behavior)
+	exact := len(req.Header[exactHeadersKey]) > 0
+	// Browsers send Host first. Exact mode may instead place it explicitly
+	// among the supplied pairs; when omitted, framing still supplies it here.
 	host := req.Host
 	if host == "" {
 		host = req.URL.Host
 	}
-	fmt.Fprintf(conn.bw, "Host: %s\r\n", host)
+	_, explicitHost := resolveHeaderKey(req.Header, "Host")
+	if !exact || !explicitHost {
+		fmt.Fprintf(conn.bw, "Host: %s\r\n", host)
+	}
 
 	// Connection header second, immediately after Host. Real Chrome emits
 	// "Connection: keep-alive" as the second request header on the HTTP/1.1 wire.
@@ -1306,11 +1311,10 @@ func (t *HTTP1Transport) writeRequest(conn *http1Conn, req *http.Request) error 
 	// anything. HTTP/1.0 would be a different matter, and this writer only
 	// speaks 1.1.
 	connValue := req.Header.Get("Connection")
-	exact := len(req.Header[exactHeadersKey]) > 0
 	if connValue == "" && !exact {
 		connValue = "keep-alive"
 	}
-	if connValue != "" {
+	if connValue != "" && !exact {
 		fmt.Fprintf(conn.bw, "Connection: %s\r\n", connValue)
 	}
 
@@ -1575,13 +1579,14 @@ func (t *HTTP1Transport) writeHeadersInOrder(w *bufio.Writer, req *http.Request,
 			continue
 		}
 
-		// Skip Host - already written before this function is called
-		if strings.EqualFold(key, "Host") {
+		// Outside exact mode Host and Connection were already written as the
+		// browser's prefix. Explicit exact-mode pairs retain their own slots.
+		if strings.EqualFold(key, "Host") && len(req.Header[exactHeadersKey]) == 0 {
 			continue
 		}
 
 		// Skip Connection - already written immediately after Host
-		if strings.EqualFold(key, "Connection") {
+		if strings.EqualFold(key, "Connection") && len(req.Header[exactHeadersKey]) == 0 {
 			written[canonicalKey] = true
 			continue
 		}
