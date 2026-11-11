@@ -96,6 +96,13 @@ type pendingDial struct {
 	done   chan struct{}
 }
 
+// A shared result remains owned until its leader has either accepted it or
+// disposed of it. In particular, an ALPN error carries a live, unpooled socket.
+type dialResult struct {
+	conn    *persistentConn
+	pending *pendingDial
+}
+
 // persistentConn represents a persistent HTTP/2 connection
 type persistentConn struct {
 	host           string
@@ -528,107 +535,142 @@ func (t *HTTP2Transport) getOrCreateConn(ctx context.Context, host, port, key st
 	leader := false
 	ch := t.dialGroup.DoChan(key, func() (interface{}, error) {
 		leader = true
-		// Detach request cancellation for the other waiters, preserving the
-		// triggering request's deadline. The transport owns cancellation and
-		// completion of this attempt if it is still pending when Close runs.
+		// A request leaving must not cancel other waiters' connection. Retain
+		// its deadline; the transport independently owns shutdown cancellation.
 		dialParent := context.WithoutCancel(ctx)
-		var cancel context.CancelFunc
-		if dl, ok := ctx.Deadline(); ok {
-			dialParent, cancel = context.WithDeadline(dialParent, dl)
-		} else {
-			dialParent, cancel = context.WithCancel(dialParent)
+		if deadline, ok := ctx.Deadline(); ok {
+			var cancel context.CancelFunc
+			dialParent, cancel = context.WithDeadline(dialParent, deadline)
+			defer cancel()
 		}
-		pending := &pendingDial{cancel: cancel, done: make(chan struct{})}
-		// A usable conn may have been published between our checks above and
-		// winning the singleflight slot.
-		t.connsMu.Lock()
-		if t.closed {
-			t.connsMu.Unlock()
-			cancel()
-			return nil, fmt.Errorf("http2: transport closed")
-		}
-		if c, ok := t.conns[key]; ok && t.isConnUsable(c) {
-			t.connsMu.Unlock()
-			cancel()
-			return c, nil
-		}
-		if t.pendingDials == nil {
-			t.pendingDials = make(map[*pendingDial]struct{})
-		}
-		t.pendingDials[pending] = struct{}{}
-		t.connsMu.Unlock()
-		defer func() {
-			cancel()
-			t.connsMu.Lock()
-			delete(t.pendingDials, pending)
-			close(pending.done)
-			t.connsMu.Unlock()
-		}()
-
-		// When a proxy is configured, retry transient connection failures a
-		// couple of times (pre-send, so method-safe).
 		attempts := 1
 		if t.proxy != nil && t.proxy.URL != "" {
 			attempts = proxyDialAttempts
 		}
-		newConn, derr := retryDial(dialParent, attempts, t.connectTimeout+10*time.Second,
-			func(c context.Context) (*persistentConn, error) {
-				return t.createConn(c, host, port)
-			})
-		if derr != nil {
-			return nil, derr
-		}
-
-		t.connsMu.Lock()
-		if t.closed {
-			t.connsMu.Unlock()
-			newConn.close()
-			return nil, fmt.Errorf("http2: transport closed")
-		}
-		// Another goroutine may have created a conn while we were dialing
-		if existingConn, ok := t.conns[key]; ok && t.isConnUsable(existingConn) {
-			t.connsMu.Unlock()
-			newConn.close()
-			return existingConn, nil
-		}
-		t.conns[key] = newConn
-		t.connsMu.Unlock()
-		return newConn, nil
+		return t.dialConnection(dialParent, host, port, key, attempts)
 	})
 
-	// Every caller, the leader included, stops waiting when its own context
-	// ends. The dial itself runs detached and carries on for the others; a
-	// connection it opens is published to the pool, so nothing is lost. The one
-	// thing nobody would own is the live connection an ALPN downgrade hands to
-	// the leader, so a leader that leaves closes it once the dial returns.
+	// Every caller stops waiting on its own context. A cancelled leader still
+	// drains its result, disposing of an unclaimed ALPN socket before releasing
+	// the transport's dial registration. Close joins this disposal too.
 	var res singleflight.Result
 	select {
 	case res = <-ch:
 	case <-ctx.Done():
 		go func() {
 			r := <-ch
-			var alpnErr *ALPNMismatchError
-			if leader && errors.As(r.Err, &alpnErr) && alpnErr.TLSConn != nil {
-				alpnErr.TLSConn.Close()
+			if leader {
+				closeALPN(r.Err)
+				t.finishDial(r.Val.(*dialResult).pending)
 			}
 		}()
 		return nil, ctx.Err()
 	}
-	v, err := res.Val, res.Err
-	if err != nil {
-		// An ALPN downgrade returns a single live TLS connection carried inside
-		// the error, meant for ONE owner to serve over HTTP/1.1. singleflight
-		// hands every coalesced caller the same error (same connection), so only
-		// the leader may use it; waiters must dial their own connection instead
-		// of racing/double-closing the shared one. (Each waiter's own dial will
-		// itself downgrade and yield its own dedicated connection.)
-		var alpnErr *ALPNMismatchError
-		if errors.As(err, &alpnErr) && !leader {
-			return t.createConn(ctx, host, port)
-		}
-		return nil, err
+	result := res.Val.(*dialResult)
+	if leader {
+		defer t.finishDial(result.pending)
+		return t.acceptDial(ctx, result, res.Err)
 	}
-	return v.(*persistentConn), nil
+	var alpnErr *ALPNMismatchError
+	if errors.As(res.Err, &alpnErr) {
+		// Only the leader owns the shared ALPN socket. Every other caller's
+		// dedicated replacement is also registered and bounded by shutdown.
+		return t.dialDedicated(ctx, host, port, key)
+	}
+	return t.acceptDial(ctx, result, res.Err)
+}
+
+// dialConnection registers every connection entrypoint, including probes and
+// dedicated ALPN retries. The caller must finishDial after accepting/disposing
+// the result, rather than when the network portion alone finishes.
+func (t *HTTP2Transport) dialConnection(ctx context.Context, host, port, key string, attempts int) (*dialResult, error) {
+	result := &dialResult{}
+	dialCtx, cancel := context.WithCancel(ctx)
+	t.connsMu.Lock()
+	if t.closed {
+		t.connsMu.Unlock()
+		cancel()
+		return result, fmt.Errorf("http2: transport closed")
+	}
+	if conn, ok := t.conns[key]; ok && t.isConnUsable(conn) {
+		t.connsMu.Unlock()
+		cancel()
+		result.conn = conn
+		return result, nil
+	}
+	pending := &pendingDial{cancel: cancel, done: make(chan struct{})}
+	if t.pendingDials == nil {
+		t.pendingDials = make(map[*pendingDial]struct{})
+	}
+	t.pendingDials[pending] = struct{}{}
+	result.pending = pending
+	t.connsMu.Unlock()
+
+	conn, err := retryDial(dialCtx, attempts, t.connectTimeout+10*time.Second,
+		func(attempt context.Context) (*persistentConn, error) { return t.createConn(attempt, host, port) })
+	if err != nil {
+		return result, err
+	}
+	t.connsMu.Lock()
+	if t.closed {
+		t.connsMu.Unlock()
+		conn.close()
+		return result, fmt.Errorf("http2: transport closed")
+	}
+	if old, ok := t.conns[key]; ok {
+		if t.isConnUsable(old) {
+			t.connsMu.Unlock()
+			conn.close()
+			result.conn = old
+			return result, nil
+		}
+		go t.retire(old)
+	}
+	t.conns[key] = conn
+	t.connsMu.Unlock()
+	result.conn = conn
+	return result, nil
+}
+
+func (t *HTTP2Transport) finishDial(pending *pendingDial) {
+	if pending == nil {
+		return
+	}
+	pending.cancel()
+	t.connsMu.Lock()
+	delete(t.pendingDials, pending)
+	close(pending.done)
+	t.connsMu.Unlock()
+}
+
+func closeALPN(err error) {
+	var alpn *ALPNMismatchError
+	if errors.As(err, &alpn) && alpn.TLSConn != nil {
+		alpn.TLSConn.Close()
+	}
+}
+
+// acceptDial is the ownership handoff. Serialize it with Close, and dispose of
+// an unpooled ALPN result before the dial registration can tell Close it is done.
+func (t *HTTP2Transport) acceptDial(ctx context.Context, result *dialResult, err error) (*persistentConn, error) {
+	t.connsMu.RLock()
+	closed := t.closed
+	cancelled := ctx.Err()
+	t.connsMu.RUnlock()
+	if closed || cancelled != nil {
+		closeALPN(err)
+		if cancelled != nil {
+			return nil, cancelled
+		}
+		return nil, fmt.Errorf("http2: transport closed")
+	}
+	return result.conn, err
+}
+
+func (t *HTTP2Transport) dialDedicated(ctx context.Context, host, port, key string) (*persistentConn, error) {
+	result, err := t.dialConnection(ctx, host, port, key, 1)
+	defer t.finishDial(result.pending)
+	return t.acceptDial(ctx, result, err)
 }
 
 // isConnUsable reports whether a connection may be handed out for a NEW request.
@@ -1664,51 +1706,7 @@ func (t *HTTP2Transport) getConnectHost(requestHost string) string {
 // Connect establishes a connection to the host without making a request.
 // This is used for protocol racing - the first protocol to connect wins.
 func (t *HTTP2Transport) Connect(ctx context.Context, host, port string) error {
-	// Use connect host for pool key (domain fronting: multiple request hosts share one connection)
-	connectHost := t.getConnectHost(host)
-	key := net.JoinHostPort(connectHost, port)
-
-	// Check if we already have a usable connection
-	t.connsMu.RLock()
-	if t.closed {
-		t.connsMu.RUnlock()
-		return fmt.Errorf("http2: transport closed")
-	}
-	existingConn, exists := t.conns[key]
-	t.connsMu.RUnlock()
-
-	if exists && t.isConnUsable(existingConn) {
-		return nil // Already connected
-	}
-
-	// Create new connection
-	conn, err := t.createConn(ctx, host, port)
-	if err != nil {
-		return err
-	}
-
-	// Store connection for reuse
-	t.connsMu.Lock()
-	if t.closed {
-		t.connsMu.Unlock()
-		go conn.close()
-		return fmt.Errorf("http2: transport closed")
-	}
-	// Check again in case another goroutine created one
-	if oldConn, exists := t.conns[key]; exists {
-		// Close the old one if not usable. Deferred, because "not usable for a
-		// new request" does not mean nothing is streaming on it.
-		if !t.isConnUsable(oldConn) {
-			go t.retire(oldConn)
-		} else {
-			// Old one is still good, close the new one we just created
-			go conn.close()
-			t.connsMu.Unlock()
-			return nil
-		}
-	}
-	t.conns[key] = conn
-	t.connsMu.Unlock()
-
-	return nil
+	key := net.JoinHostPort(t.getConnectHost(host), port)
+	_, err := t.dialDedicated(ctx, host, port, key)
+	return err
 }
