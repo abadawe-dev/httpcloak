@@ -50,6 +50,9 @@ type HTTP2Transport struct {
 	// connection attempt, so a burst of requests to one host (especially behind
 	// a proxy) opens one connection instead of a storm of N.
 	dialGroup singleflight.Group
+	// The transport owns shared dials after their triggering request leaves.
+	// Guarded by connsMu so Close cannot miss a dial that starts concurrently.
+	pendingDials map[*pendingDial]struct{}
 
 	// TLS session resumption cache (shared across connections)
 	sessionCache utls.ClientSessionCache
@@ -86,6 +89,11 @@ type HTTP2Transport struct {
 	// closed means the transport takes no new requests. Set by both Close and
 	// CloseGraceful; the latter leaves connections draining in t.retired.
 	closed bool
+}
+
+type pendingDial struct {
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 // persistentConn represents a persistent HTTP/2 connection
@@ -520,27 +528,43 @@ func (t *HTTP2Transport) getOrCreateConn(ctx context.Context, host, port, key st
 	leader := false
 	ch := t.dialGroup.DoChan(key, func() (interface{}, error) {
 		leader = true
+		// Detach request cancellation for the other waiters, preserving the
+		// triggering request's deadline. The transport owns cancellation and
+		// completion of this attempt if it is still pending when Close runs.
+		dialParent := context.WithoutCancel(ctx)
+		var cancel context.CancelFunc
+		if dl, ok := ctx.Deadline(); ok {
+			dialParent, cancel = context.WithDeadline(dialParent, dl)
+		} else {
+			dialParent, cancel = context.WithCancel(dialParent)
+		}
+		pending := &pendingDial{cancel: cancel, done: make(chan struct{})}
 		// A usable conn may have been published between our checks above and
 		// winning the singleflight slot.
-		t.connsMu.RLock()
+		t.connsMu.Lock()
+		if t.closed {
+			t.connsMu.Unlock()
+			cancel()
+			return nil, fmt.Errorf("http2: transport closed")
+		}
 		if c, ok := t.conns[key]; ok && t.isConnUsable(c) {
-			t.connsMu.RUnlock()
+			t.connsMu.Unlock()
+			cancel()
 			return c, nil
 		}
-		t.connsMu.RUnlock()
-
-		// Detach from the triggering request's cancellation so one caller going
-		// away doesn't abort the dial the others are waiting on — but PRESERVE
-		// that caller's deadline, otherwise a stalling host/proxy would ride
-		// past the configured timeout (context.WithoutCancel drops the deadline
-		// too). retryDial bounds each attempt by this deadline, so the whole
-		// dial (including retries) still aborts at the request budget.
-		dialParent := context.WithoutCancel(ctx)
-		if dl, ok := ctx.Deadline(); ok {
-			var dcancel context.CancelFunc
-			dialParent, dcancel = context.WithDeadline(dialParent, dl)
-			defer dcancel()
+		if t.pendingDials == nil {
+			t.pendingDials = make(map[*pendingDial]struct{})
 		}
+		t.pendingDials[pending] = struct{}{}
+		t.connsMu.Unlock()
+		defer func() {
+			cancel()
+			t.connsMu.Lock()
+			delete(t.pendingDials, pending)
+			close(pending.done)
+			t.connsMu.Unlock()
+		}()
+
 		// When a proxy is configured, retry transient connection failures a
 		// couple of times (pre-send, so method-safe).
 		attempts := 1
@@ -558,13 +582,13 @@ func (t *HTTP2Transport) getOrCreateConn(ctx context.Context, host, port, key st
 		t.connsMu.Lock()
 		if t.closed {
 			t.connsMu.Unlock()
-			go newConn.close()
+			newConn.close()
 			return nil, fmt.Errorf("http2: transport closed")
 		}
 		// Another goroutine may have created a conn while we were dialing
 		if existingConn, ok := t.conns[key]; ok && t.isConnUsable(existingConn) {
 			t.connsMu.Unlock()
-			go newConn.close()
+			newConn.close()
 			return existingConn, nil
 		}
 		t.conns[key] = newConn
@@ -1226,6 +1250,11 @@ func (t *HTTP2Transport) dialHTTPProxyBlockingFresh(ctx context.Context, targetH
 // dialHTTPProxyBlocking performs the traditional blocking CONNECT flow.
 // Used when speculative TLS is disabled or as a fallback.
 func (t *HTTP2Transport) dialHTTPProxyBlocking(ctx context.Context, conn net.Conn, connectReq string) (net.Conn, error) {
+	// A read deadline bounds time, but does not react to cancellation before
+	// that deadline. In particular, transport shutdown must close a stalled
+	// CONNECT while joining its shared dial.
+	stopCancel := context.AfterFunc(ctx, func() { conn.Close() })
+	defer stopCancel()
 	// Send CONNECT request
 	if _, err := conn.Write([]byte(connectReq)); err != nil {
 		conn.Close()
@@ -1380,7 +1409,17 @@ func (t *HTTP2Transport) Close() {
 	t.closed = true
 	conns := t.conns
 	t.conns = nil
+	dials := make([]*pendingDial, 0, len(t.pendingDials))
+	for dial := range t.pendingDials {
+		dials = append(dials, dial)
+	}
 	t.connsMu.Unlock()
+	for _, dial := range dials {
+		dial.cancel()
+	}
+	for _, dial := range dials {
+		<-dial.done
+	}
 
 	t.stopCleanupOnce.Do(func() { close(t.stopCleanup) })
 

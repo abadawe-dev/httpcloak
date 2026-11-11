@@ -1138,6 +1138,10 @@ func (t *HTTP1Transport) dialHTTPProxyBlockingFresh(ctx context.Context, targetH
 // dialHTTPProxyBlocking performs the traditional blocking CONNECT flow.
 // Used when speculative TLS is disabled or as a fallback.
 func (t *HTTP1Transport) dialHTTPProxyBlocking(ctx context.Context, conn net.Conn, connectReq string) (net.Conn, error) {
+	// CONNECT precedes the request's normal context watcher. Close its raw
+	// socket on cancellation too, rather than waiting for its read deadline.
+	stopCancel := context.AfterFunc(ctx, func() { conn.Close() })
+	defer stopCancel()
 	// Send CONNECT request
 	if _, err := conn.Write([]byte(connectReq)); err != nil {
 		conn.Close()
