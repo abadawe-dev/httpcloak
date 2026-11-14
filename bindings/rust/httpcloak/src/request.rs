@@ -366,6 +366,13 @@ impl RequestBuilder {
     /// whole exchange, body included. A streamed request without one may read
     /// its body for as long as it likes; only the connection and the response
     /// headers are bounded, by the session's timeout.
+    ///
+    /// When it runs out the request is cancelled, and fails with a
+    /// [timeout](crate::ErrorKind::Timeout) that says whether any of it had
+    /// been sent ([`Error::is_not_sent`](crate::Error::is_not_sent)), as the
+    /// library reports once cancelled: at once in practice, and the call ends
+    /// at most a second past the timeout should it not, as possibly sent. An
+    /// answer that came in that moment is returned instead.
     pub fn timeout(mut self, timeout: Duration) -> Self {
         if timeout.is_zero() {
             self.fail(ErrorKind::InvalidInput, "the request timeout must be greater than zero");

@@ -428,6 +428,32 @@ fn failures_say_whether_the_request_was_sent() {
     assert!(!e.is_not_sent(), "the first hop was answered: {e:?}");
 }
 
+/// A request that runs out its own timeout before it has a connection was not
+/// sent, and says so: here, through a proxy that takes the connection and never
+/// answers the CONNECT. The timeout this crate enforces used to say nothing of
+/// it, so the request read as possibly sent, which a caller paying for an order
+/// has to take as possibly paid. One that went out and timed out waiting for
+/// its answer still says it may have been sent.
+#[test]
+fn a_request_that_timed_out_before_it_left_says_it_was_not_sent() {
+    let black_hole = RawServer::start(|_, _| std::thread::sleep(Duration::from_secs(5)));
+    let via = Session::builder().proxy(format!("http://{}", black_hole.addr)).build().unwrap();
+    let started = Instant::now();
+    let e = via.post("https://pay.test/").body("x").timeout(Duration::from_millis(700)).send().unwrap_err();
+    assert!(e.is_timeout() && e.is_not_sent(), "{e:?}");
+    assert!(started.elapsed() < Duration::from_secs(2), "took {:?}", started.elapsed());
+
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let e = rt
+        .block_on(via.post("https://pay.test/").body("x").timeout(Duration::from_millis(700)).send_async())
+        .unwrap_err();
+    assert!(e.is_timeout() && e.is_not_sent(), "{e:?}");
+
+    let silent = RawServer::start(|_, _| std::thread::sleep(Duration::from_secs(3)));
+    let e = session().post(silent.url("/pay")).body("x").timeout(Duration::from_millis(300)).send().unwrap_err();
+    assert!(e.is_timeout() && !e.is_not_sent(), "{e:?}");
+}
+
 /// A proxy that refuses the tunnel says with what status, and nothing was sent.
 #[test]
 fn a_proxys_refusal_carries_its_status() {

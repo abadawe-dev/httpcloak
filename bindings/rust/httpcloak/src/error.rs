@@ -211,9 +211,10 @@ impl Error {
     /// the library. Such a request may be sent again whatever it does.
     ///
     /// It is `false` whenever that is not known, which includes every failure
-    /// once the request was written or may have been, and a timeout this crate
-    /// enforced: a request it is `false` for may have reached the server and
-    /// been acted on. A library built before it said so reports `false` for
+    /// once the request was written or may have been: a request it is `false`
+    /// for may have reached the server and been acted on. A request that ran
+    /// out its [timeout](crate::RequestBuilder::timeout) before any of it was
+    /// sent is not sent. A library built before it said so reports `false` for
     /// all its failures.
     pub fn is_not_sent(&self) -> bool {
         self.inner.not_sent

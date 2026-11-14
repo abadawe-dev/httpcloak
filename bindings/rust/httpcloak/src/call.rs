@@ -63,6 +63,11 @@ struct State {
     /// Nobody will take the outcome any more; the library has been told to
     /// cancel, and a late result is disposed of.
     abandoned: bool,
+    /// The deadline passed, with this timeout, and the library has been told
+    /// to cancel. Its report, when it comes, ends the call: as a timeout that
+    /// keeps the report's word on whether the request was sent, or as the
+    /// answer when that came first.
+    expired: Option<Duration>,
 }
 
 /// The calls the library has yet to report on, by callback ID.
@@ -105,7 +110,8 @@ impl Call {
         Ok(Call { shared, finished: false })
     }
 
-    /// Blocks until the result arrives or `deadline` passes.
+    /// Blocks until the result arrives or `deadline` passes (and then, for at
+    /// most [`SETTLE`], until the library says whether it had sent anything).
     pub(crate) fn wait(mut self, deadline: Option<Deadline>) -> Result<Completed> {
         let mut state = lock(&self.shared.state);
         loop {
@@ -117,14 +123,20 @@ impl Call {
             match deadline {
                 None => state = self.shared.done.wait(state).unwrap_or_else(|e| e.into_inner()),
                 Some(d) => {
+                    let expired = state.expired.is_some();
+                    let at = if expired { d.at + SETTLE } else { d.at };
                     let now = Instant::now();
-                    if now >= d.at {
+                    if now >= at {
                         drop(state);
-                        self.shared.expire(d.timeout);
+                        if expired {
+                            self.shared.settle();
+                        } else {
+                            self.shared.expire(d.timeout);
+                        }
                         state = lock(&self.shared.state);
                         continue;
                     }
-                    state = self.shared.done.wait_timeout(state, d.at - now).unwrap_or_else(|e| e.into_inner()).0;
+                    state = self.shared.done.wait_timeout(state, at - now).unwrap_or_else(|e| e.into_inner()).0;
                 }
             }
         }
@@ -159,6 +171,12 @@ impl Deadline {
     }
 }
 
+/// How long a call whose deadline has passed waits, once the library has been
+/// told to cancel it, for the library to report whether it had sent the
+/// request. The library reports at once in every case measured; this bounds
+/// how far past its deadline a call can end should it not.
+const SETTLE: Duration = Duration::from_secs(1);
+
 impl Shared {
     /// Records the library's result, or disposes of it when nobody wants it.
     fn complete(&self, outcome: Result<Completed>) {
@@ -170,6 +188,13 @@ impl Shared {
             }
             return;
         }
+        let outcome = match (state.expired, outcome) {
+            // The deadline passed and the call was cancelled: it timed out,
+            // and the library's report says whether anything had been sent.
+            (Some(timeout), Err(reported)) => Err(timed_out(timeout, reported.is_not_sent())),
+            // The answer came as the deadline passed: it is the outcome.
+            (_, outcome) => outcome,
+        };
         state.outcome = Some(outcome);
         let waker = state.waker.take();
         drop(state);
@@ -198,22 +223,54 @@ impl Shared {
         }
     }
 
-    /// Fails the call with a timeout, unless it has finished already.
+    /// Times the call out, unless it has finished already: the library is
+    /// told to cancel it, and its report then ends the call as a timeout
+    /// that says whether the request was sent (`complete`).
+    ///
+    /// The timeout used to end the call there and then, as possibly sent:
+    /// only the library knows whether the request had left, and a request
+    /// that never got a connection (a proxy that black-holes, a host that
+    /// does not answer the handshake) was reported as maybe sent, which a
+    /// caller placing an order has to treat as maybe ordered.
     fn expire(&self, timeout: Duration) {
         let mut state = lock(&self.state);
-        if state.outcome.is_some() || state.taken || state.abandoned {
+        if state.outcome.is_some() || state.taken || state.abandoned || state.expired.is_some() {
             return;
         }
-        state.outcome = Some(Err(Error::timeout(format!("the request timed out after {timeout:?}"))));
-        state.abandoned = true;
-        let waker = state.waker.take();
+        state.expired = Some(timeout);
         drop(state);
         // SAFETY: plain call; an ID the library no longer knows is a no-op.
         unsafe { sys::httpcloak_cancel_request(self.id) };
+    }
+
+    /// Ends a call that timed out without the library's report, [`SETTLE`]
+    /// after the deadline, as a timeout that may have sent the request. A
+    /// report that comes later is disposed of.
+    fn settle(&self) {
+        let mut state = lock(&self.state);
+        let Some(timeout) = state.expired else { return };
+        if state.outcome.is_some() || state.taken || state.abandoned {
+            return;
+        }
+        state.outcome = Some(Err(timed_out(timeout, false)));
+        state.abandoned = true;
+        let waker = state.waker.take();
+        drop(state);
         self.done.notify_all();
         if let Some(waker) = waker {
             waker.wake();
         }
+    }
+}
+
+/// A call that ran out its deadline; `not_sent` when the library said no part
+/// of the request had left.
+fn timed_out(timeout: Duration, not_sent: bool) -> Error {
+    let e = Error::timeout(format!("the request timed out after {timeout:?}"));
+    if not_sent {
+        e.unsent()
+    } else {
+        e
     }
 }
 
@@ -311,8 +368,11 @@ impl Drop for CallFuture {
 
 /// What the timer does when a deadline passes.
 pub(crate) enum Expiry {
-    /// Fail a call with a timeout and cancel it.
+    /// Time a call out: cancel it, and settle it [`SETTLE`] later should the
+    /// library not have reported by then.
     Call(Weak<Shared>, Duration),
+    /// End a timed-out call the library has not reported on.
+    Settle(Weak<Shared>),
     /// Cancel a stream's context, so a read blocked on it returns.
     Stream(Weak<StreamDeadline>),
 }
@@ -431,8 +491,18 @@ impl Timer {
                 for expiry in due {
                     match expiry {
                         Expiry::Call(call, timeout) => {
-                            if let Some(call) = call.upgrade() {
-                                call.expire(timeout);
+                            if let Some(shared) = call.upgrade() {
+                                shared.expire(timeout);
+                                drop(shared);
+                                let mut queue = lock(&self.queue);
+                                let key =
+                                    TimerKey(Instant::now() + SETTLE, self.next.fetch_add(1, AtomicOrdering::Relaxed));
+                                queue.insert(key, Expiry::Settle(call));
+                            }
+                        }
+                        Expiry::Settle(call) => {
+                            if let Some(shared) = call.upgrade() {
+                                shared.settle();
                             }
                         }
                         Expiry::Stream(stream) => {
