@@ -4,8 +4,16 @@ package transport
 // 9.2.2: GET, HEAD, OPTIONS, TRACE, PUT and DELETE. The empty method is GET.
 // Methods are case-sensitive (RFC 9110 section 9.1), so "put" is not PUT.
 func IdempotentMethod(method string) bool {
+	return SafeMethod(method) || method == "PUT" || method == "DELETE"
+}
+
+// SafeMethod reports whether method is safe by RFC 9110 section 9.2.1: GET,
+// HEAD, OPTIONS and TRACE. The empty method is GET. It is Chrome's
+// HttpUtil::IsMethodSafe, the test Chrome puts a request to before sending it
+// in 0-RTT early data, where it may be processed twice.
+func SafeMethod(method string) bool {
 	switch method {
-	case "", "GET", "HEAD", "OPTIONS", "TRACE", "PUT", "DELETE":
+	case "", "GET", "HEAD", "OPTIONS", "TRACE":
 		return true
 	}
 	return false
@@ -30,12 +38,11 @@ func IdempotentMethod(method string) bool {
 //     REFUSED_STREAM, a GOAWAY whose last stream ID is below the request's
 //     stream, or HTTP/3's H3_REQUEST_REJECTED. The HTTP/2 and HTTP/3
 //     transports resend these themselves, as Chrome does.
-//  3. Its method is idempotent and its body can be sent again (it has none,
-//     or holds it in memory), so that sending it twice has the effect of
-//     sending it once.
+//  3. Its method is safe (SafeMethod: GET, HEAD, OPTIONS, TRACE) and its
+//     body can be sent again (it has none, or holds it in memory).
 //
-// Never otherwise: a POST or PATCH that may have been written is not sent
-// again, whatever became of it, and its failure comes back with RequestNotSent
+// Never otherwise: a POST, PATCH, PUT or DELETE that may have been written is
+// not sent again, whatever became of it, and its failure comes back with RequestNotSent
 // false, for the caller to settle (by asking the server what became of it,
 // say). Nor does HTTP/1.1 send a request again once the wait for its answer
 // timed out: a slow answer is a server at work, perhaps on this very request.
@@ -46,13 +53,16 @@ func IdempotentMethod(method string) bool {
 // before a form is submitted again, but a program placing an order cannot,
 // and an order placed twice costs more than one that failed visibly. It is Go
 // net/http's rule (Transport's shouldRetryRequest, nothingWrittenError), with
-// two differences: net/http resends a PUT or DELETE only when nothing of it
-// was written, where RFC 9110 makes both idempotent; and it takes an
+// two differences: net/http resends a PUT or DELETE that may have been
+// written, which RFC 9110 calls idempotent, and this does not, because that is
+// the method's promise and not the server's (a store's PUT may place an order,
+// its DELETE cancel one), and Chrome itself sends only safe methods where a
+// request may be processed twice (0-RTT); and net/http takes an
 // Idempotency-Key header as making any method idempotent, which this does not,
 // because whether the server honours the key is not something the library
 // can know. A caller who knows may send such a request again itself.
 func CanResend(method string, bodyReplayable bool, err error) bool {
-	return RequestNotSent(err) || (IdempotentMethod(method) && bodyReplayable)
+	return RequestNotSent(err) || (SafeMethod(method) && bodyReplayable)
 }
 
 // canResendOnAnotherProtocol is CanResend for a request whose attempt on one

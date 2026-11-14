@@ -881,8 +881,9 @@ func (c *Client) doWithRetry(ctx context.Context, req *Request) (*Response, erro
 	// A retry sends the request again, so it follows the rule the transport
 	// holds its own resends to (transport.CanResend; the body is held in
 	// memory above): a failure is retried only when it proves the request
-	// was never sent, or the request is idempotent, and an answer (a status
-	// on the retry list, or a bot challenge) only when it is idempotent, since
+	// was never sent, or the request is safe (GET, HEAD, OPTIONS, TRACE), and
+	// an answer (a status on the retry list, or a bot challenge), which the
+	// caller asked to be retried, only when it is idempotent, since
 	// the server had the request and may have acted on it.
 	idempotent := transport.IdempotentMethod(req.Method)
 	// Whether an attempt before this one reached the server or may have, so
@@ -1514,7 +1515,7 @@ func (c *Client) markH3Failed(hostKey string) {
 // attempt that failed with err, when that cannot have the server act on it
 // twice (transport.CanResend; the body here is always held in memory, so it
 // can be sent again whole): the attempt never had a connection to write it
-// on, or the request is idempotent. Otherwise err stands. A failure of next
+// on, or the request is safe. Otherwise err stands. A failure of next
 // after an attempt that may have delivered the request is marked so
 // (transport.MarkSentBefore), whatever next itself did.
 func (c *Client) fallBack(err error, httpReq *http.Request, body []byte, next func() (*http.Response, string, error)) (*http.Response, string, error) {

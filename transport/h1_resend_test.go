@@ -169,6 +169,33 @@ func TestAPostAServerDroppedOnAPooledConnectionGoesOnce(t *testing.T) {
 	}
 }
 
+// Nor is a PUT or a DELETE. RFC 9110 calls them idempotent, but that is the
+// method's promise, not the store's: a PUT that places an order or a DELETE
+// that cancels one is no safer sent twice. The library sends again by itself
+// only what Chrome would send in 0-RTT, where a request may be processed twice:
+// a safe method (HttpUtil::IsMethodSafe: GET, HEAD, OPTIONS, TRACE).
+func TestAPutOrDeleteAServerDroppedOnAPooledConnectionGoesOnce(t *testing.T) {
+	for _, method := range []string{"PUT", "DELETE"} {
+		t.Run(method, func(t *testing.T) {
+			var log requestLog
+			addr, _ := rawServer(t, servesThenDrops(&log, method))
+			tr := h1Transport(t, "")
+			warm(t, tr, "http://"+addr)
+
+			_, err := tr.Do(context.Background(), &Request{Method: method, URL: "http://" + addr + "/order", Body: []byte("qty=1"), Timeout: 10 * time.Second})
+			if err == nil {
+				t.Fatalf("a %s the server dropped the connection on should fail", method)
+			}
+			if RequestNotSent(err) {
+				t.Fatalf("the server read the %s, but the error says it was not sent: %v", method, err)
+			}
+			if n := log.count(method); n != 1 {
+				t.Fatalf("server read the %s %d times, want once: %q", method, n, log.all())
+			}
+		})
+	}
+}
+
 // A GET may be sent again: the same drop is retried on a new connection and
 // succeeds, as in net/http and Chrome.
 func TestAGetAServerDroppedOnAPooledConnectionGoesAgain(t *testing.T) {

@@ -171,8 +171,8 @@ const (
 // resendOnNewConn reports whether a request whose exchange on a pooled
 // connection failed as failure may be sent on a new connection, by the rule
 // in resend.go: when nothing of it was written, or when the connection failed
-// before any answer and the request is idempotent with a body that can be
-// sent again. Never after a timeout, nor once an answer had begun, as neither
+// before any answer and the request is safe (SafeMethod) with a body that can
+// be sent again. Never after a timeout, nor once an answer had begun, as neither
 // net/http nor Chrome resends then. A body that was written is rewound with
 // GetBody before it goes out again; one without GetBody cannot be.
 func resendOnNewConn(req *http.Request, failure h1Failure) bool {
@@ -181,7 +181,7 @@ func resendOnNewConn(req *http.Request, failure h1Failure) bool {
 		return true
 	case failedUnanswered:
 		bodyReplayable := req.Body == nil || req.Body == http.NoBody || req.GetBody != nil
-		return IdempotentMethod(req.Method) && bodyReplayable
+		return SafeMethod(req.Method) && bodyReplayable
 	}
 	return false
 }

@@ -1653,7 +1653,7 @@ func (t *Transport) doAuto(ctx context.Context, req *Request) (*Response, error)
 	// should happen; if that succeeds the host is cached as H2.
 	//
 	// It only runs when it cannot send the request twice: either nothing of
-	// the first attempt reached the server, or the request is idempotent and
+	// the first attempt reached the server, or the request is safe and
 	// its body can be sent again. Otherwise the first attempt's error is the
 	// answer, as it is in Chrome, which does not resend a POST over another
 	// protocol after a stream error.
@@ -2476,7 +2476,7 @@ func (t *Transport) roundTripHTTP3(ctx context.Context, h3 *HTTP3Transport, http
 		return resp, noop, err
 	}
 	// Whether the first attempt may go again even if it was written.
-	idempotent := IdempotentMethod(httpReq.Method)
+	idempotent := SafeMethod(httpReq.Method)
 
 	// First attempt on a stall-abortable child context. The stall window only
 	// bounds time-to-response-headers: RoundTrip returns once headers arrive and
