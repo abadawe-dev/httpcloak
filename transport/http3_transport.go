@@ -262,7 +262,11 @@ type proxyQUICConn struct {
 // HTTP3Transport is an HTTP/3 transport with proper QUIC connection reuse
 // http3.Transport handles connection pooling internally - we just provide DNS resolution
 type HTTP3Transport struct {
+	// transport holds the HTTP/3 settings and the dial function each
+	// connection is built with; pool holds the connections. Both are replaced
+	// together by Refresh, under mu.
 	transport *http3.Transport
+	pool      *h3Pool
 	preset    *fingerprint.Preset
 	dnsCache  *dns.Cache
 
@@ -611,6 +615,7 @@ func NewHTTP3TransportWithTransportConfig(preset *fingerprint.Preset, dnsCache *
 	// Create HTTP/3 transport with custom dial for DNS caching
 	// http3.Transport handles connection pooling internally
 	t.transport = t.buildHTTP3Transport(t.dialQUIC, additionalSettings)
+	t.pool = newH3Pool(t.transport)
 
 	return t, nil
 }
@@ -749,6 +754,7 @@ func NewHTTP3TransportWithConfig(preset *fingerprint.Preset, dnsCache *dns.Cache
 		dialFunc = t.dialQUIC
 	}
 	t.transport = t.buildHTTP3Transport(dialFunc, additionalSettings)
+	t.pool = newH3Pool(t.transport)
 
 	return t, nil
 }
@@ -874,6 +880,7 @@ func NewHTTP3TransportWithMASQUE(preset *fingerprint.Preset, dnsCache *dns.Cache
 
 	// Create HTTP/3 transport with MASQUE dial function
 	t.transport = t.buildHTTP3Transport(t.dialQUICWithMASQUE, additionalSettings)
+	t.pool = newH3Pool(t.transport)
 
 	return t, nil
 }
@@ -1125,10 +1132,10 @@ func (t *HTTP3Transport) SetIPv4FirstOverride(v bool) {
 }
 
 // preferIPv4Ordering reports whether the QUIC dial should interleave IPv4 first.
-// It honors both the persistent DNS-cache PreferIPv4 knob and the transient
-// per-retry override set by SetIPv4FirstOverride.
-func (t *HTTP3Transport) preferIPv4Ordering() bool {
-	if t.ipv4FirstOverride.Load() {
+// It honors the persistent DNS-cache PreferIPv4 knob, the override set by
+// SetIPv4FirstOverride, and a request's own ask (withIPv4First).
+func (t *HTTP3Transport) preferIPv4Ordering(ctx context.Context) bool {
+	if ipv4FirstFrom(ctx) || t.ipv4FirstOverride.Load() {
 		return true
 	}
 	return t.dnsCache != nil && t.dnsCache.PreferIPv4()
@@ -1173,7 +1180,7 @@ func (t *HTTP3Transport) raceQUICDialWithECH(ctx context.Context, host string, i
 	// honor the DNS cache's PreferIPv4 knob here to stay in step with the H1/H2
 	// direct path and the connection pools; default stays IPv6-first (RFC 8305).
 	var addrs []*net.UDPAddr
-	if t.preferIPv4Ordering() {
+	if t.preferIPv4Ordering(ctx) {
 		addrs = interleaveAddrs(ipv4Addrs, ipv6Addrs)
 	} else {
 		addrs = interleaveAddrs(ipv6Addrs, ipv4Addrs)
@@ -1682,37 +1689,22 @@ func (t *HTTP3Transport) roundTrip(req *http.Request) (*http.Response, error) {
 		defer func() { req.URL.Host = origURLHost }()
 	}
 
-	// Make request - http3.Transport handles connection pooling
-	// Capture transport pointer under lock to avoid data race with recreateTransport/Refresh
+	// Capture the pool under lock to avoid a data race with Refresh.
 	t.mu.RLock()
-	transport := t.transport
+	pool := t.pool
 	t.mu.RUnlock()
 
-	// Retry on 0-RTT rejection. The rejected connection cannot carry the
-	// request, so it is ended along with the ticket that offered the early
-	// data, and the retry dials a full handshake that picks up a fresh ticket.
-	//
-	// This used to close and rebuild the whole transport, which ended every
-	// other origin's connections and failed their requests in flight; and the
-	// host was marked rather than its ticket dropped, but every dial path put
-	// the session cache back and still chose the resuming hello, so each retry
-	// offered 0-RTT and was rejected again until the request failed (#127).
-	// Chrome goes further still and resends on the same connection once its
-	// handshake completes; that would need the HTTP/3 layer to reopen its
-	// control streams after the rejection, which it cannot do today.
-	var resp *http.Response
-	var err error
-	for attempt := 0; attempt < 3; attempt++ {
-		resp, err = transport.RoundTrip(req)
-		if err == nil || !is0RTTRejectedError(err) {
-			break
-		}
-		origin := originKey(req.URL)
-		if t.sessionCache != nil {
-			t.sessionCache.Put(hostOnly(origin), nil)
-		}
-		t.closeOrigin(origin)
-	}
+	// A rejection of 0-RTT costs that connection and the ticket that offered
+	// the early data, and the request goes again on a full handshake that
+	// picks up a fresh ticket (send). It used to close and rebuild the whole
+	// transport, which ended every other origin's connections and failed their
+	// requests in flight; and the host was marked rather than its ticket
+	// dropped, so each retry offered 0-RTT and was rejected again until the
+	// request failed (#127). Chrome goes further still and resends on the same
+	// connection once its handshake completes; that would need the HTTP/3
+	// layer to reopen its control streams after the rejection, which it cannot
+	// do today.
+	resp, err := t.send(pool, req)
 
 	// Check if a new connection was created during this request
 	t.mu.RLock()
@@ -1791,13 +1783,10 @@ func (t *HTTP3Transport) closeAllProxyConns() {
 
 // Close shuts down the transport and all connections
 func (t *HTTP3Transport) Close() error {
-	// Capture transport pointer under lock to avoid data race with recreateTransport/Refresh
 	t.mu.RLock()
-	transport := t.transport
+	pool := t.pool
 	t.mu.RUnlock()
-
-	// Use timeout for QUIC closes to prevent blocking on graceful drain
-	closeWithTimeout(transport, 3*time.Second)
+	pool.close()
 
 	t.closeDirectConns(true)
 
@@ -1836,11 +1825,9 @@ func (t *HTTP3Transport) Refresh() error {
 	// its handshake after a refresh would describe a connection that is gone.
 	t.lastConn = nil
 
-	// Close the current transport (this closes all QUIC connections)
-	// Use timeout to prevent blocking if QUIC drain takes too long
-	if t.transport != nil {
-		closeWithTimeout(t.transport, 3*time.Second)
-	}
+	// Close the current connections; a request already past the pool lookup
+	// fails on its closed connection, and new ones go to the new pool.
+	t.pool.close()
 
 	// End every direct connection and its socket, including any the http3
 	// pool has already let go of without closing.
@@ -1876,6 +1863,7 @@ func (t *HTTP3Transport) Refresh() error {
 
 	// Recreate the transport with same configuration
 	t.transport = t.buildHTTP3Transport(dialFunc, additionalSettings)
+	t.pool = newH3Pool(t.transport)
 
 	return nil
 }
@@ -2050,177 +2038,33 @@ func (t *HTTP3Transport) invalidateECHConfig(host string) {
 	dns.InvalidateECHConfig(host)
 }
 
-// Connect establishes a QUIC connection to the host without making a request.
-// This is used for protocol racing - the first protocol to connect wins.
+// Connect opens host's QUIC connection, the one its requests will be sent on,
+// without sending a request, and returns once its handshake has completed. A
+// live connection is reused: connecting then does nothing. It goes the way a
+// request's connection goes (the same dial, through the proxy when there is
+// one), so auto mode's connect race leaves the winner's connection for the
+// request to use, and Preconnect warms the connection the next request takes.
+//
+// The race's probe used to dial a connection of its own and close it with a
+// "connect probe" reason the server could read, and the request then made a
+// second handshake: two QUIC connections per new host where a browser makes
+// one.
 func (t *HTTP3Transport) Connect(ctx context.Context, host, port string) error {
-	// Proxied transports MUST probe through the proxy. The direct quic.DialAddr
-	// probe below would dial the target straight from the local socket, leaking
-	// the real client IP and never actually testing whether QUIC relays through
-	// the proxy. Route through the same dial path doHTTP3 uses for real requests.
-	// Keyed off usesUDPProxy (not the tunnel handle) because the tunnel is
-	// connected lazily — on the first probe it is still nil, and falling through
-	// to the direct path here would leak the real IP.
-	if t.masqueConn != nil || t.usesUDPProxy {
-		return t.connectViaProxy(ctx, host, port)
-	}
+	t.mu.RLock()
+	pool := t.pool
+	t.mu.RUnlock()
 
-	// Use connect host for DNS resolution (may differ for domain fronting)
 	connectHost := t.getConnectHost(host)
-	addr := net.JoinHostPort(connectHost, port)
-
-	// Use DNS cache for resolution - resolve connectHost, not request host
-	ip, err := t.dnsCache.ResolveOne(ctx, connectHost)
+	c, err := pool.get(ctx, net.JoinHostPort(connectHost, port))
 	if err != nil {
-		return fmt.Errorf("DNS resolution failed: %w", err)
-	}
-
-	resolvedAddr := net.JoinHostPort(ip.String(), port)
-
-	// Determine key log writer - config override or global
-	var keyLogWriter io.Writer
-	if t.config != nil && t.config.KeyLogWriter != nil {
-		keyLogWriter = t.config.KeyLogWriter
-	} else {
-		keyLogWriter = GetKeyLogWriter()
-	}
-
-	// Create TLS config - use request host for SNI
-	tlsCfg := &tls.Config{
-		ServerName:         host,
-		NextProtos:         []string{"h3"},
-		InsecureSkipVerify: t.insecureSkipVerify,
-		KeyLogWriter:       keyLogWriter,
-	}
-	t.tlsVerify.Apply(tlsCfg)
-
-	// Fetch ECH configs from DNS HTTPS records (use request host for ECH).
-	// Skipped for a host that recently stalled or rejected ECH (issue #74), and
-	// skipped when the caller has turned ECH off.
-	//
-	// t.disableECH was missing from this condition. dialQUIC honours it, so the
-	// documented "disable ECH for a faster first request" option worked on the
-	// real request path and did nothing here, on the probe that runs first in
-	// auto mode. The query walks three public resolvers serially, so a caller
-	// who had explicitly opted out still paid for it on every new host.
-	var echConfigList []byte
-	if !t.disableECH && !dns.IsECHIncompatible(host) {
-		echConfigList, _ = dns.FetchECHConfigs(ctx, host)
-	}
-
-	// Determine QUIC idle timeout (default 30s, configurable)
-	quicIdleTimeout := 30 * time.Second
-	if t.config != nil && t.config.QuicIdleTimeout > 0 {
-		quicIdleTimeout = t.config.QuicIdleTimeout
-	}
-
-	// Get ClientHelloID for the probe connection
-	var clientHelloID *utls.ClientHelloID
-	if t.preset.QUICClientHelloID.Client != "" {
-		clientHelloID = &t.preset.QUICClientHelloID
-	} else if t.preset.ClientHelloID.Client != "" {
-		clientHelloID = &t.preset.ClientHelloID
-	}
-
-	// Build QUIC config from preset getters (same fingerprint as real connections)
-	quicCfg := t.buildQUICConfig(clientHelloID, quicIdleTimeout, 0)
-	// buildQUICConfig embeds the shared base spec; concurrent probes would
-	// race-mutate it via ApplyPreset. Hand this probe its own fresh spec
-	// (same seed -> identical fingerprint, private object -> no race).
-	quicCfg.CachedClientHelloSpec = t.getSpecForHost(host)
-	if len(echConfigList) > 0 {
-		quicCfg.ECHConfigList = echConfigList
-	}
-
-	// Try to establish QUIC connection. When ECH is applied, time-box the attempt
-	// (issue #74) so a stall on an incompatible ECH ClientHello fails fast, then
-	// retry the probe once WITHOUT ECH so H3 stays a viable race winner. The real
-	// request dial applies the same degradation.
-	var conn *quic.Conn
-	if len(echConfigList) > 0 {
-		echCtx, cancel := boundedECHAttempt(ctx)
-		conn, err = quic.DialAddr(echCtx, resolvedAddr, tlsCfg, quicCfg)
-		cancel()
-		if err != nil && ctx.Err() == nil && (echCausedDialFailure(err) || errors.Is(err, context.DeadlineExceeded)) {
-			dns.MarkECHIncompatible(host)
-			t.invalidateECHConfig(host)
-			echlessCfg := t.buildQUICConfig(clientHelloID, quicIdleTimeout, 0)
-			echlessCfg.CachedClientHelloSpec = t.getSpecForHost(host)
-			conn, err = quic.DialAddr(ctx, resolvedAddr, tlsCfg, echlessCfg)
-		}
-	} else {
-		conn, err = quic.DialAddr(ctx, resolvedAddr, tlsCfg, quicCfg)
-	}
-	if err != nil {
-		// Stale ECH (e.g. CDN key rotation) shows up here as a handshake
-		// rejection; drop the cached config so the next probe refetches.
+		// A handshake rejection usually means stale ECH (CDN key rotation);
+		// drop the cached config so the next dial refetches.
 		if isECHRejectionError(err) {
-			t.invalidateECHConfig(host)
+			t.invalidateECHConfig(connectHost)
 		}
 		return fmt.Errorf("QUIC dial failed: %w", err)
 	}
-
-	// Connection established successfully - the http3.Transport will reuse this
-	// via its internal pooling when we make a real request
-	// For now, just track that we successfully dialed
-	t.mu.Lock()
-	t.dialCount++
-	t.mu.Unlock()
-
-	// Close this test connection - http3.Transport will create its own
-	// This is just to verify QUIC/H3 is reachable
-	_ = conn.CloseWithError(0, "connect probe")
-	_ = addr // suppress unused warning
-
-	return nil
-}
-
-// connectViaProxy runs the H3 reachability probe THROUGH the configured proxy
-// (SOCKS5 UDP relay or MASQUE), mirroring the dial path doHTTP3 uses for real
-// requests. This is what makes raceH3H2 safe over a proxy: the probe tunnels
-// instead of dialing the target directly, so no real-IP leak and the race
-// actually learns whether QUIC relays through the proxy. The dialFunc selection
-// must stay in sync with Refresh()/recreateTransport().
-func (t *HTTP3Transport) connectViaProxy(ctx context.Context, host, port string) error {
-	var dialFunc func(context.Context, string, *tls.Config, *quic.Config) (*quic.Conn, error)
-	if t.masqueConn != nil {
-		dialFunc = t.dialQUICWithMASQUE
-	} else {
-		dialFunc = t.dialQUICWithProxy
-	}
-
-	// Match the key log writer selection used by the direct probe / dial path.
-	var keyLogWriter io.Writer
-	if t.config != nil && t.config.KeyLogWriter != nil {
-		keyLogWriter = t.config.KeyLogWriter
-	} else {
-		keyLogWriter = GetKeyLogWriter()
-	}
-
-	// SNI = request host, h3 ALPN. dialQUICWithMASQUE clones this and overrides
-	// ServerName; dialQUICWithProxy clones t.tlsConfig and ignores this. Both
-	// build their own quic.Config, so the cfg arg is unused (pass nil).
-	tlsCfg := &tls.Config{
-		ServerName:         host,
-		NextProtos:         []string{"h3"},
-		InsecureSkipVerify: t.insecureSkipVerify,
-		KeyLogWriter:       keyLogWriter,
-	}
-	t.tlsVerify.Apply(tlsCfg)
-
-	conn, err := dialFunc(ctx, net.JoinHostPort(host, port), tlsCfg, nil)
-	if err != nil {
-		// A handshake rejection here usually means stale ECH (CDN key rotation);
-		// drop the cached config so the next probe refetches.
-		if isECHRejectionError(err) {
-			t.invalidateECHConfig(host)
-		}
-		return fmt.Errorf("QUIC dial via proxy failed: %w", err)
-	}
-
-	// Probe only: tear down so the real request dials its own connection. The
-	// per-connection cleanup goroutine in the dial func removes proxy state.
-	_ = conn.CloseWithError(0, "connect probe")
-	return nil
+	return awaitHandshake(ctx, "", c.conn)
 }
 
 // Stats returns transport statistics

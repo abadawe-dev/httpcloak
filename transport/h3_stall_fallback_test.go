@@ -49,15 +49,15 @@ func TestIsH3Stall(t *testing.T) {
 func TestH3IPv4FirstOverride(t *testing.T) {
 	tr := &HTTP3Transport{} // no dnsCache: isolates the override from PreferIPv4
 
-	if tr.preferIPv4Ordering() {
+	if tr.preferIPv4Ordering(context.Background()) {
 		t.Fatal("default: preferIPv4Ordering should be false")
 	}
 	tr.SetIPv4FirstOverride(true)
-	if !tr.preferIPv4Ordering() {
+	if !tr.preferIPv4Ordering(context.Background()) {
 		t.Fatal("override on: preferIPv4Ordering should be true")
 	}
 	tr.SetIPv4FirstOverride(false)
-	if tr.preferIPv4Ordering() {
+	if tr.preferIPv4Ordering(context.Background()) {
 		t.Fatal("override off: preferIPv4Ordering should be false again")
 	}
 }

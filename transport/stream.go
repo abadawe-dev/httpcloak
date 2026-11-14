@@ -615,7 +615,7 @@ func (t *Transport) doStreamHTTP3(ctx context.Context, req *Request) (*StreamRes
 
 	// For streaming, use cancellable context without additional timeout
 	ctx, cancel := context.WithCancel(ctx)
-	ctx, gotConn := withH3SendTrace(ctx)
+	ctx, written := withH3SendTrace(ctx)
 
 	// Build HTTP request
 	method := req.Method
@@ -665,7 +665,7 @@ func (t *Transport) doStreamHTTP3(ctx context.Context, req *Request) (*StreamRes
 	finishEstablishment()
 	if err != nil {
 		cancel()
-		return nil, WrapError("roundtrip", host, port, "h3", h3NotSent(err, gotConn))
+		return nil, WrapError("roundtrip", host, port, "h3", h3NotSent(err, written))
 	}
 
 	timing.FirstByte = float64(time.Since(reqStart).Milliseconds())
