@@ -89,3 +89,39 @@ func TestAGetWhoseHTTP2ConnectionWasLostGoesAgainOverHTTP2(t *testing.T) {
 		})
 	}
 }
+
+// An HTTP/2 connection in use carries on however old it is, as Chrome's does
+// (its SPDY sessions have no maximum age). It was retired at five minutes old,
+// so the request after paid a new handshake, and a proxy's CONNECT, in the
+// middle of whatever the connection was busy with.
+func TestABusyHTTP2ConnectionIsKeptPastFiveMinutes(t *testing.T) {
+	srv := httptest.NewUnstartedServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		w.Write([]byte("ok"))
+	}))
+	l := &countingListener{Listener: srv.Listener}
+	srv.Listener = l
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	tr := autoTransport(t, "firefox-148")
+
+	ctx := context.Background()
+	if _, err := tr.Do(ctx, &Request{URL: srv.URL}); err != nil {
+		t.Fatal(err)
+	}
+	h2 := tr.GetHTTP2Transport()
+	h2.connsMu.RLock()
+	for _, conn := range h2.conns {
+		conn.mu.Lock()
+		conn.createdAt = conn.createdAt.Add(-6 * time.Minute) // opened six minutes ago, used just now
+		conn.mu.Unlock()
+	}
+	h2.connsMu.RUnlock()
+
+	if _, err := tr.Do(ctx, &Request{URL: srv.URL}); err != nil {
+		t.Fatal(err)
+	}
+	if n := l.accepted.Load(); n != 1 {
+		t.Fatalf("%d connections: the six-minute-old connection was replaced", n)
+	}
+}

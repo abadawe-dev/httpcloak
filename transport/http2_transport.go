@@ -76,7 +76,6 @@ type HTTP2Transport struct {
 
 	// Configuration
 	maxIdleTime          time.Duration
-	maxConnAge           time.Duration
 	abandonedBodyTimeout time.Duration
 	connectTimeout       time.Duration
 	insecureSkipVerify   bool
@@ -308,7 +307,6 @@ func NewHTTP2TransportWithConfig(preset *fingerprint.Preset, dnsCache *dns.Cache
 		shuffleSeed:  shuffleSeed,
 		hasPSKSpec:   hasPSKSpec,
 		maxIdleTime:  90 * time.Second,
-		maxConnAge:   5 * time.Minute,
 		// A response body that has not produced a single byte for this long is
 		// treated as abandoned by its caller, so the connection can be
 		// reclaimed. Without a bound here, a caller that never closes a body
@@ -708,10 +706,11 @@ func (t *HTTP2Transport) isConnUsable(conn *persistentConn) bool {
 		return false
 	}
 
-	// Check age
-	if time.Since(conn.createdAt) > t.maxConnAge {
-		return false
-	}
+	// No maximum age: Chrome keeps an HTTP/2 session for as long as the
+	// server keeps it and it is not idle (net/spdy/spdy_session.h has no
+	// lifetime). A connection was retired at five minutes old here, so the
+	// first request after it paid a new handshake (and a proxy's CONNECT),
+	// however busy the connection was: in the middle of a drop, say.
 
 	// Check idle time — but not if requests are actively in-flight.
 	// Without this, long downloads (>maxIdleTime) get killed by cleanup.
@@ -751,9 +750,6 @@ func (t *HTTP2Transport) isConnDestroyable(conn *persistentConn) bool {
 	}
 
 	if h2Conn == nil {
-		return true
-	}
-	if time.Since(conn.createdAt) > t.maxConnAge {
 		return true
 	}
 	return time.Since(lastUsedAt) > t.maxIdleTime

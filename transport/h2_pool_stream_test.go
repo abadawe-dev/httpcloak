@@ -50,23 +50,17 @@ func streamingConn(inFlight int32, startedAgo, lastProgressAgo time.Duration) *p
 }
 
 // The core of #83: a connection streaming a body is not destroyable even when
-// it is far past both the idle timeout and the max connection age.
+// it is far past the idle timeout.
 func TestH2StreamingConnNotDestroyed(t *testing.T) {
 	tr := testTransport(t)
 
-	// Started 10 minutes ago (past maxConnAge=5m), last "used" 10 minutes ago
-	// (past maxIdleTime=90s), but actively delivering bytes as of a moment ago.
+	// Started 10 minutes ago, last "used" 10 minutes ago (past
+	// maxIdleTime=90s), but actively delivering bytes as of a moment ago.
 	conn := streamingConn(1, 10*time.Minute, 50*time.Millisecond)
 
 	if tr.isConnDestroyable(conn) {
 		t.Fatal("connection with an active response body was reported destroyable; " +
 			"this is issue #83 - cleanup would close the socket under the reader")
-	}
-
-	// It is correctly considered unusable for NEW requests (too old), and those
-	// two answers must not be conflated.
-	if tr.isConnUsable(conn) {
-		t.Fatal("connection past maxConnAge should not be handed out for new requests")
 	}
 }
 
