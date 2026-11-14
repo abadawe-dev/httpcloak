@@ -19,8 +19,8 @@ import (
 // read it, that sent it twice, and a body given as a reader went out empty the
 // second time because the first attempt had consumed it; the caller got the
 // second answer and no sign of either problem. Chrome fails such a request.
-// The fallback now runs only when nothing was sent, or when the request is
-// idempotent and its body can be sent again.
+// The second attempt now runs only when nothing was sent, or when the request
+// is safe and its body can be sent again, and it goes over HTTP/2.
 
 // resetOnH2Server reads each request, records it, and resets the stream on
 // HTTP/2 after the body has arrived. HTTP/1.1 requests get a 200.
@@ -136,36 +136,39 @@ func TestAutoThroughAProxyDoesNotResendAPostThatWasSent(t *testing.T) {
 		t.Fatalf("server saw %q, want the POST once, over HTTP/2", got)
 	}
 
-	// A GET may be sent again, and still is.
-	if err := doReq(tr, &Request{Method: "GET", URL: srv.URL}); err != nil {
-		t.Fatalf("GET should fall back to HTTP/1.1 and succeed: %v", err)
+	// Nor a GET: a reset stream is the server refusing that request, which
+	// Chrome does not send again, and HTTP/1.1 is not tried on a host that
+	// speaks HTTP/2.
+	if err := doReq(tr, &Request{Method: "GET", URL: srv.URL}); err == nil {
+		t.Fatal("a GET whose HTTP/2 stream was reset should fail")
 	}
-	if got := seen(); len(got) != 3 || got[1] != "HTTP/2.0 GET " || got[2] != "HTTP/1.1 GET " {
-		t.Fatalf("server saw %q, want the GET over HTTP/2 then HTTP/1.1", got)
+	if got := seen(); len(got) != 2 || got[1] != "HTTP/2.0 GET " {
+		t.Fatalf("server saw %q, want the GET once, over HTTP/2", got)
 	}
 }
 
-// An idempotent request with its body in memory can be sent again, and still
-// falls back to HTTP/1.1 as before.
-func TestAutoStillFallsBackForAnIdempotentRequest(t *testing.T) {
+// A safe request whose HTTP/2 stream the server reset used to be sent again
+// over HTTP/1.1. The server refused it on a connection that is fine: it fails,
+// as in Chrome, and nothing goes out over HTTP/1.1 to a host that speaks
+// HTTP/2.
+func TestAutoDoesNotSendAGetWhoseStreamWasResetAgain(t *testing.T) {
 	for _, preset := range []string{"firefox-148", "chrome-146"} {
 		t.Run(preset, func(t *testing.T) {
 			tr := autoTransport(t, preset)
 			srv, seen := resetOnH2Server(t)
-			if err := doReq(tr, &Request{Method: "GET", URL: srv.URL}); err != nil {
-				t.Fatalf("GET should fall back to HTTP/1.1 and succeed: %v", err)
+			if err := doReq(tr, &Request{Method: "GET", URL: srv.URL}); err == nil {
+				t.Fatal("a GET whose HTTP/2 stream was reset should fail")
 			}
-			got := seen()
-			if len(got) != 2 || got[0] != "HTTP/2.0 GET " || got[1] != "HTTP/1.1 GET " {
-				t.Fatalf("server saw %q, want the GET over HTTP/2 then HTTP/1.1", got)
+			if got := seen(); len(got) != 1 || got[0] != "HTTP/2.0 GET " {
+				t.Fatalf("server saw %q, want the GET once, over HTTP/2", got)
 			}
 		})
 	}
 }
 
-// When no connection could be had, nothing was sent, so even a POST may try
-// HTTP/1.1. The server drops every connection, so that attempt fails too, but
-// it is made.
+// When no connection could be had, nothing was sent, so even a POST may go
+// again, over HTTP/2 on a new connection. The server drops every connection,
+// so that attempt fails too, but it is made.
 func TestAutoFallsBackForAPostThatWasNeverSent(t *testing.T) {
 	tr := autoTransport(t, "firefox-148")
 	srv := httptest.NewUnstartedServer(stdhttp.NotFoundHandler())
@@ -179,7 +182,7 @@ func TestAutoFallsBackForAPostThatWasNeverSent(t *testing.T) {
 		t.Fatal("request against a server that drops every connection should fail")
 	}
 	if got := l.accepted.Load(); got != 2 {
-		t.Errorf("server saw %d connection attempts, want 2 (H2 dial, then the HTTP/1.1 fallback)", got)
+		t.Errorf("server saw %d connection attempts, want 2 (H2 dial, then one more)", got)
 	}
 }
 

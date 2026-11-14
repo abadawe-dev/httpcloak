@@ -8,7 +8,6 @@ import (
 	"net"
 	stdhttp "net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -211,13 +210,16 @@ func TestAFailureOnceTheRequestMayHaveBeenWrittenIsNotMarked(t *testing.T) {
 		}
 	})
 
-	// HTTP/2 delivered the request and the server reset its stream; the GET
-	// then fell back to HTTP/1.1, which could not connect. That attempt sent
-	// nothing, but the request reached the server all the same.
-	t.Run("auto h2 reset, then no h1 connection", func(t *testing.T) {
+	// HTTP/2 delivered the request and its connection was then lost; the GET
+	// went again on a new HTTP/2 connection, which could not be had. That
+	// attempt sent nothing, but the request reached the server all the same.
+	t.Run("auto h2 connection lost, then no new one", func(t *testing.T) {
 		srv := httptest.NewUnstartedServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
-			panic(stdhttp.ErrAbortHandler)
+			r.Context().Value(connKey{}).(net.Conn).Close()
 		}))
+		srv.Config.ConnContext = func(ctx context.Context, c net.Conn) context.Context {
+			return context.WithValue(ctx, connKey{}, c)
+		}
 		srv.Listener = &firstOnlyListener{Listener: srv.Listener}
 		srv.EnableHTTP2 = true
 		srv.StartTLS()
@@ -226,9 +228,6 @@ func TestAFailureOnceTheRequestMayHaveBeenWrittenIsNotMarked(t *testing.T) {
 		_, err := tr.Do(context.Background(), &Request{Method: "GET", URL: srv.URL, Timeout: 10 * time.Second})
 		if err == nil || RequestNotSent(err) {
 			t.Fatalf("want a failure not marked as not sent, got %v", err)
-		}
-		if !strings.Contains(err.Error(), "h1") {
-			t.Fatalf("want the HTTP/1.1 fallback's failure, got %v", err)
 		}
 	})
 }

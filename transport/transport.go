@@ -1591,119 +1591,91 @@ func (t *Transport) doAuto(ctx context.Context, req *Request) (*Response, error)
 		return resp, err
 	}
 
-	// The H3/H2 or H2 attempt's error, for deciding whether the HTTP/1.1
-	// fallback below may run.
-	var failed error
-
 	// Race HTTP/3 and HTTP/2 in parallel if H3 is supported
 	if snap.preset.SupportHTTP3 && snap.h3 != nil {
 		resp, protocol, err := t.raceH3H2(ctx, req)
-		if protocol == ProtocolHTTP3 {
+		switch {
+		case protocol == ProtocolHTTP3:
 			// HTTP/3 connected: the host is cached as HTTP/3, and
 			// doHTTP3OrHTTP2 made every attempt there is to make.
 			return resp, err
-		}
-		if err == nil {
-			t.protocolSupportMu.Lock()
-			t.protocolSupport[host] = protocol
-			t.protocolSupportMu.Unlock()
+		case err == nil:
+			t.cacheProtocol(host, protocolOf(resp))
 			return resp, nil
 		}
-		failed = err
-		// ALPN mismatch, from the probe or from the H2 attempt: serve HTTP/1.1
-		// on the connection that negotiated it. Not retried on failure, exactly
-		// like the branch below.
+		// ALPN mismatch from the probe: serve HTTP/1.1 on the connection
+		// that negotiated it. Not retried on failure.
 		var alpnErr *ALPNMismatchError
 		if errors.As(err, &alpnErr) {
 			resp, err := t.doHTTP1WithTLSConn(ctx, req, alpnErr)
 			if err == nil {
-				t.protocolSupportMu.Lock()
-				t.protocolSupport[host] = ProtocolHTTP1
-				t.protocolSupportMu.Unlock()
+				t.cacheProtocol(host, ProtocolHTTP1)
 			}
 			return resp, err
 		}
-		// Both failed, try HTTP/1.1 with new connection
-	} else {
-		// No H3 support, just try H2
-		resp, err := t.doHTTP2(ctx, req)
-		if err == nil {
-			t.protocolSupportMu.Lock()
-			t.protocolSupport[host] = ProtocolHTTP2
-			t.protocolSupportMu.Unlock()
-			return resp, nil
-		}
-		failed = err
-		// Check if ALPN mismatch - reuse connection for H1
-		var alpnErr *ALPNMismatchError
-		if errors.As(err, &alpnErr) {
-			resp, err := t.doHTTP1WithTLSConn(ctx, req, alpnErr)
-			if err == nil {
-				t.protocolSupportMu.Lock()
-				t.protocolSupport[host] = ProtocolHTTP1
-				t.protocolSupportMu.Unlock()
-			}
-			return resp, err
-		}
+		return nil, err
 	}
-
-	// Fallback to HTTP/1.1 with new connection.
-	//
-	// Deliberately not cached. Every other HTTP/1.1 entry in protocolSupport
-	// comes from an ALPN downgrade or from a preset that disables H2, both of
-	// which hold for every request to the host. This path is reached when the
-	// H2 (or H3/H2) attempt failed for any other reason, most often a transient
-	// one such as a reset or timed-out handshake, and the fallback merely got
-	// the request through. Caching it pinned the host to HTTP/1.1 for the rest
-	// of the session with nothing that would ever re-probe it, so one bad
-	// handshake on the first request to a host silently downgraded every later
-	// request, and the fingerprint with them. Leaving the host uncached costs
-	// nothing on the next request beyond re-attempting H2, which is exactly what
-	// should happen; if that succeeds the host is cached as H2.
-	//
-	// It only runs when it cannot send the request twice: either nothing of
-	// the first attempt reached the server, or the request is safe and
-	// its body can be sent again. Otherwise the first attempt's error is the
-	// answer, as it is in Chrome, which does not resend a POST over another
-	// protocol after a stream error.
-	//
-	// When the first attempt may have been sent, the fallback's failure is
-	// marked so, whatever its own attempt did: the request may have reached
-	// the server.
-	if failed != nil && !canResendOnAnotherProtocol(req, failed) {
-		return nil, failed
+	resp, err := t.doHTTP2OrHTTP1(ctx, req)
+	if err == nil {
+		t.cacheProtocol(host, protocolOf(resp))
 	}
-	resp, err := t.doHTTP1(ctx, req)
-	if err != nil {
-		return nil, laterAttempt(failed, err)
-	}
-	return resp, nil
+	return resp, err
 }
 
-// doHTTP2OrHTTP1 sends req over HTTP/2, and then over HTTP/1.1: on the same
-// connection when the server negotiated HTTP/1.1, or on a new one when the
-// HTTP/2 attempt failed in a way that cannot have the request sent twice (see
-// canResendOnAnotherProtocol).
+// protocolOf is the protocol resp came over, for remembering it for its host.
+// Only a server that speaks nothing else is answered over HTTP/1.1 by
+// doHTTP2OrHTTP1, so an answer over HTTP/1.1 holds for the host's every
+// request, as an HTTP/2 one does.
+func protocolOf(resp *Response) Protocol {
+	if resp.Protocol == "h1" {
+		return ProtocolHTTP1
+	}
+	return ProtocolHTTP2
+}
+
+// doHTTP2OrHTTP1 sends req over HTTP/2, and over HTTP/1.1 only when the server
+// says it speaks nothing else: on the same connection when it negotiated
+// HTTP/1.1 (ALPN, a server or a proxy such as mitmproxy), or on a new one when
+// it answered HTTP_1_1_REQUIRED (Chrome's ERR_HTTP_1_1_REQUIRED retry), the
+// latter only when that cannot have the request sent twice
+// (canResendOnAnotherProtocol).
 //
-// It is the one path from HTTP/2 to HTTP/1.1 for a host known to be HTTP/2
-// and for HTTP proxies, which carry no HTTP/3. Through a proxy it used to
-// resend whatever HTTP/2 had done with the request, a POST whose stream was
-// reset after the server read it included.
+// When the HTTP/2 attempt failed otherwise, it goes once more over HTTP/2 on a
+// new connection, when that cannot have it sent twice and the server did not
+// reset its stream: the connection was lost (or never opened) under it, which
+// is what Chrome resends a request for (HttpNetworkTransaction::
+// ShouldResendRequest), on a new connection of the same protocol. A stream the
+// server reset is a refusal of that request, which Chrome does not resend
+// (REFUSED_STREAM and a GOAWAY below the stream are resent by the HTTP/2
+// transport itself).
+//
+// It used to send any such request again over HTTP/1.1, to a host that speaks
+// HTTP/2: HTTP/1.1's header order on a new TLS connection that had offered h2,
+// a Chrome downgrading mid-session, which Chrome never does and an edge that
+// fingerprints (Akamai, Cloudflare, Kasada) can see.
 func (t *Transport) doHTTP2OrHTTP1(ctx context.Context, req *Request) (*Response, error) {
 	resp, err := t.doHTTP2(ctx, req)
 	if err == nil {
 		return resp, nil
 	}
-	// Reuse the TLS connection when the server (or a proxy such as Charles or
-	// mitmproxy) negotiated HTTP/1.1 instead of HTTP/2.
 	var alpnErr *ALPNMismatchError
 	if errors.As(err, &alpnErr) {
 		return t.doHTTP1WithTLSConn(ctx, req, alpnErr)
 	}
-	if !canResendOnAnotherProtocol(req, err) {
+	if ctx.Err() != nil || !canResendOnAnotherProtocol(req, err) {
 		return nil, err
 	}
-	resp, retryErr := t.doHTTP1(ctx, req)
+	if http11Required(err) {
+		resp, retryErr := t.doHTTP1(ctx, req)
+		return resp, laterAttempt(err, retryErr)
+	}
+	if streamReset(err) {
+		return nil, err
+	}
+	resp, retryErr := t.doHTTP2(ctx, req)
+	if errors.As(retryErr, &alpnErr) {
+		resp, retryErr = t.doHTTP1WithTLSConn(ctx, req, alpnErr)
+	}
 	return resp, laterAttempt(err, retryErr)
 }
 
@@ -1902,16 +1874,14 @@ func drainLateALPN(h2Done <-chan struct{}, alpnErrCh <-chan *ALPNMismatchError) 
 }
 
 // raceH3H2 races HTTP/3 and HTTP/2 connections in parallel, then makes the request
-// once on whichever protocol connects first. This eliminates the 5-second delay
+// on whichever protocol connects first. This eliminates the 5-second delay
 // when HTTP/3 (QUIC) is blocked by firewalls or VPNs.
 //
-// It does not fall back. Whatever the winner's attempt returns is returned as
-// is, including an *ALPNMismatchError from the H2 side, which carries the live
-// TLS connection for the caller to serve HTTP/1.1 on. doAuto owns the fallbacks
-// (ALPN reuse, then a fresh HTTP/1.1 connection) so that a request makes the
-// same attempts whichever doAuto branch it took. The returned Protocol is the
-// one the response was served on, for the caller to cache; it is only
-// meaningful when err is nil.
+// The request goes through the protocol's own sender, which owns that
+// protocol's fallbacks (doHTTP3OrHTTP2, doHTTP2OrHTTP1); an ALPN downgrade the
+// probe met is returned as its *ALPNMismatchError, which carries the live TLS
+// connection for doAuto to serve HTTP/1.1 on. The returned Protocol is the one
+// the race chose (HTTP/1.1 for the downgrade).
 func (t *Transport) raceH3H2(ctx context.Context, req *Request) (*Response, Protocol, error) {
 	// Parse URL to get host:port
 	parsedURL, err := url.Parse(req.URL)
@@ -1945,7 +1915,7 @@ func (t *Transport) raceH3H2(ctx context.Context, req *Request) (*Response, Prot
 		resp, err := t.doHTTP3OrHTTP2(ctx, req, host)
 		return resp, ProtocolHTTP3, err
 	default: // ProtocolHTTP2 (also the no-winner default)
-		resp, err := t.doHTTP2(ctx, req)
+		resp, err := t.doHTTP2OrHTTP1(ctx, req)
 		return resp, ProtocolHTTP2, err
 	}
 }

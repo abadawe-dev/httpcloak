@@ -101,12 +101,13 @@ func doGet(t *testing.T, tr *Transport, rawURL string) *Response {
 	return resp
 }
 
-// A transient failure on the first request must not pin the host to HTTP/1.1.
+// A transient failure on the first request (the connection dropped as it
+// opened) is retried over HTTP/2 on a new connection, and the host is cached
+// as HTTP/2. It used to be sent over HTTP/1.1, to a host that speaks HTTP/2.
 // Both doAuto branches are exercised: the plain H2 attempt (a preset without
 // H3 support) and the H3/H2 race (a preset with it). The race branch probes
-// before it dials, so it needs one more connection dropped to fail through to
-// the fallback.
-func TestAutoDoesNotCacheSoftH1Fallback(t *testing.T) {
+// before it dials, so it needs one more connection dropped.
+func TestAutoRetriesATransientFailureOverHTTP2(t *testing.T) {
 	cases := []struct {
 		name   string
 		preset string
@@ -121,27 +122,13 @@ func TestAutoDoesNotCacheSoftH1Fallback(t *testing.T) {
 			srv, l := h2ServerDroppingFirst(t, tc.drop)
 			host := extractHost(srv.URL)
 
-			// First request: the H2 attempt hits the dropped connection(s), the
-			// HTTP/1.1 fallback dials fresh and gets through.
 			first := doGet(t, tr, srv.URL)
-			if first.Protocol != "h1" {
-				t.Fatalf("first request served over %q, want h1 (the fallback); dropped %d conns",
+			if first.Protocol != "h2" {
+				t.Fatalf("first request served over %q, want h2; dropped %d conns",
 					first.Protocol, l.dropped.Load())
 			}
-			if p, ok := cachedProtocol(tr, host); ok {
-				t.Fatalf("host cached as %v after a soft HTTP/1.1 fallback; a transient failure "+
-					"must not pin the protocol", p)
-			}
-
-			// Second request: nothing cached, so H2 is attempted again and wins.
-			second := doGet(t, tr, srv.URL)
-			if second.Protocol != "h2" {
-				t.Fatalf("second request served over %q, want h2: the host was pinned to the "+
-					"fallback protocol", second.Protocol)
-			}
 			if p, ok := cachedProtocol(tr, host); !ok || p != ProtocolHTTP2 {
-				t.Errorf("host cached as (%v, %v) after a successful H2 request, want ProtocolHTTP2",
-					p, ok)
+				t.Errorf("host cached as (%v, %v), want ProtocolHTTP2", p, ok)
 			}
 		})
 	}

@@ -354,6 +354,23 @@ func retryableHTTP2Request(req *http.Request, err error) (*http.Request, error) 
 	return http2.ShouldRetryRequest(req, err)
 }
 
+// http11Required reports whether err is the server answering
+// HTTP_1_1_REQUIRED, on the stream or the connection: it will not serve the
+// request over HTTP/2.
+func http11Required(err error) bool {
+	var se http2.StreamError
+	var ga http2.GoAwayError
+	return (errors.As(err, &se) && se.Code == http2.ErrCodeHTTP11Required) ||
+		(errors.As(err, &ga) && ga.ErrCode == http2.ErrCodeHTTP11Required)
+}
+
+// streamReset reports whether err is the request's stream reset, by the server
+// or by this end, rather than its connection lost.
+func streamReset(err error) bool {
+	var se http2.StreamError
+	return errors.As(err, &se)
+}
+
 // connClosing reports whether a connection can no longer open streams. It is
 // not CanTakeNewRequest, which is also false for a healthy connection that is
 // merely at its concurrent stream limit.

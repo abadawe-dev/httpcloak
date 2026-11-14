@@ -11,14 +11,15 @@ import (
 )
 
 // Regression tests: in auto mode a request makes the same attempts whichever
-// doAuto branch it takes, and the HTTP/1.1 fallback runs once.
+// doAuto branch it takes, and the second HTTP/2 attempt runs once.
 //
 // raceH3H2 used to carry its own copies of the fallbacks doAuto already has
 // (HTTP/1.1 on the ALPN-downgraded connection, then HTTP/1.1 on a fresh one).
 // When such an internal fallback failed, doAuto saw a non-ALPN error and ran
 // its own fresh-connection fallback on top, so an H3-capable preset made two
 // HTTP/1.1 attempts where a preset without H3 support made one. Now raceH3H2
-// races and makes one attempt on the winner; doAuto owns every fallback.
+// races and hands the request to the winner's sender, which owns that
+// protocol's fallbacks, once.
 //
 // The tests count accepted TCP connections, which is the number of attempts as
 // the server sees them.
@@ -54,17 +55,17 @@ func doGetErr(t *testing.T, tr *Transport, rawURL string) error {
 	return err
 }
 
-// Every connection dies at accept, so H2 fails for a non-ALPN reason and so
-// does the HTTP/1.1 fallback. Presets with H3 support pay one extra connection
-// for the H2 probe before the H2 dial; beyond that both branches make exactly
-// one HTTP/1.1 attempt.
-func TestAutoFreshH1FallbackRunsOnce(t *testing.T) {
+// Every connection dies at accept, so H2 fails for a non-ALPN reason, and so
+// does the one further HTTP/2 attempt. Presets with H3 support pay one extra
+// connection for the H2 probe before the H2 dial; beyond that both branches
+// make exactly one more attempt.
+func TestAutoSecondAttemptRunsOnce(t *testing.T) {
 	cases := []struct {
 		preset string
 		want   int32
 	}{
-		{preset: "firefox-148", want: 2}, // H2 dial + one H1 dial
-		{preset: "chrome-146", want: 3},  // H2 probe + H2 dial + one H1 dial
+		{preset: "firefox-148", want: 2}, // H2 dial + one more
+		{preset: "chrome-146", want: 3},  // H2 probe + H2 dial + one more
 	}
 	for _, tc := range cases {
 		t.Run(tc.preset, func(t *testing.T) {
@@ -80,7 +81,7 @@ func TestAutoFreshH1FallbackRunsOnce(t *testing.T) {
 				t.Fatal("request against a server that drops every connection should fail")
 			}
 			if got := l.accepted.Load(); got != tc.want {
-				t.Errorf("%s: server saw %d connection attempts, want %d (the HTTP/1.1 fallback must run once)",
+				t.Errorf("%s: server saw %d connection attempts, want %d (the second attempt must run once)",
 					tc.preset, got, tc.want)
 			}
 		})
