@@ -3,6 +3,7 @@ package transport
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -97,30 +98,60 @@ func TestASlowPostOverHTTP3GoesOnce(t *testing.T) {
 	}
 }
 
-// A GET may be sent again, and still is: the first attempt's answer is held
-// past the window, the second comes at once.
-func TestASlowGetOverHTTP3IsSentAgain(t *testing.T) {
-	url, seen := slowH3Origin(t, func(_ string, n int32) time.Duration {
-		if n == 1 {
-			return time.Minute
-		}
-		return 0
-	})
+// Nor is a GET, on a path that is alive: the server is working on it, and
+// asking again from scratch on a new connection only makes the answer later.
+// The first attempt used to be cut off after five seconds and sent again.
+func TestASlowAnswerOnALiveHTTP3PathIsWaitedFor(t *testing.T) {
+	const answerAfter = h3StallWindow + 2*time.Second
+	url, seen := slowH3Origin(t, func(string, int32) time.Duration { return answerAfter })
 	tr := h3Transport(t, ProtocolHTTP3)
 
 	start := time.Now()
 	resp, err := tr.Do(context.Background(), &Request{Method: "GET", URL: url, Timeout: 20 * time.Second})
 	if err != nil {
-		t.Fatalf("the GET should have gone again after the stall: %v", err)
+		t.Fatalf("the GET should have waited for its answer: %v", err)
 	}
 	if resp.StatusCode != 200 {
 		t.Fatalf("status %d", resp.StatusCode)
 	}
-	if took := time.Since(start); took > h3StallWindow+3*time.Second {
-		t.Fatalf("answered after %v: the GET waited out the first attempt", took)
+	if took := time.Since(start); took > answerAfter+2*time.Second {
+		t.Fatalf("answered after %v: the GET was asked for again", took)
 	}
-	if n := seen("GET"); n != 2 {
-		t.Fatalf("server read the GET %d times, want twice", n)
+	if n := seen("GET"); n != 1 {
+		t.Fatalf("server read the GET %d times, want once", n)
+	}
+}
+
+// A request on a path that went silent used to close every HTTP/3 connection
+// of the transport, to every host, before it was sent again: any request in
+// flight to another host lost its connection and its answer (an order's, in
+// the worst case). Only the silent connection is set aside now.
+func TestASilentPathCostsNoOtherHostItsAnswer(t *testing.T) {
+	gate, quiet := gatedH3Origin(t, func(w shttp.ResponseWriter, r *shttp.Request) { w.Write([]byte("ok")) })
+	slow, seen := slowH3Origin(t, func(string, int32) time.Duration { return h3StallWindow + 2*time.Second })
+	tr := h3Transport(t, ProtocolHTTP3)
+	if _, err := tr.Do(context.Background(), &Request{URL: quiet}); err != nil {
+		t.Fatalf("first visit to the quiet host: %v", err)
+	}
+
+	order := make(chan error, 1)
+	go func() {
+		resp, err := tr.Do(context.Background(), &Request{Method: "POST", URL: slow + "order", Body: []byte("qty=1"), Timeout: 20 * time.Second})
+		if err == nil && resp.StatusCode != 200 {
+			err = fmt.Errorf("status %d", resp.StatusCode)
+		}
+		order <- err
+	}()
+	time.Sleep(300 * time.Millisecond) // the order is out, its answer slow to come
+
+	gate.blocked.Store(true)
+	tr.Do(context.Background(), &Request{URL: quiet, Timeout: 12 * time.Second})
+
+	if err := <-order; err != nil {
+		t.Fatalf("the order on the other host lost its answer: %v", err)
+	}
+	if n := seen("POST"); n != 1 {
+		t.Fatalf("the other host read the order %d times, want once", n)
 	}
 }
 

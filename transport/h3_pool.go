@@ -278,6 +278,11 @@ func (t *HTTP3Transport) send(pool *h3Pool, req *http.Request) (*http.Response, 
 			pool.forget(origin, c)
 		}
 		closeRequestBody(req)
+		if isQUICTimeout(err) {
+			// QUIC gave up on a peer it heard nothing from: the path died
+			// under the request.
+			return nil, &h3PathError{err: err}
+		}
 		return nil, err
 	}
 }
@@ -308,8 +313,9 @@ func awaitHandshake(ctx context.Context, method string, conn *quic.Conn) error {
 
 // h3PathError is an HTTP/3 request that failed because the path to its origin
 // stopped carrying QUIC: its connection's handshake never completed, the dial
-// timed out, or the connection went silent under it (h3Watch). Nothing of the
-// request was written unless the error says otherwise (RequestNotSent).
+// timed out, QUIC's idle timeout ended its connection, or the connection went
+// silent under it (h3Watch). Whether any of the request was written is what
+// RequestNotSent says of the error the caller returns.
 type h3PathError struct{ err error }
 
 func (e *h3PathError) Error() string { return e.err.Error() }

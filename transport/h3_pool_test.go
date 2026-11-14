@@ -147,3 +147,53 @@ func TestAHostWhoseHTTP3PathDiesIsSentOverHTTP2(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 }
+
+// The path dies under a live connection, after a request was written on it. A
+// GET goes over HTTP/2 once the connection has heard nothing for the stall
+// window. A POST is not sent again (it may have reached the server) and waits
+// for its answer within its deadline; the requests after it go over HTTP/2.
+func TestARequestOnAPathThatWentSilentLeavesHTTP3(t *testing.T) {
+	for _, method := range []string{"GET", "POST"} {
+		t.Run(method, func(t *testing.T) {
+			var log protoLog
+			gate, url := gatedDualOrigin(t, &log, func(string) time.Duration { return 0 })
+			tr := h3Transport(t, ProtocolAuto)
+			tr.cacheProtocol(extractHost(url), ProtocolHTTP3)
+			if resp, err := tr.Do(context.Background(), &Request{URL: url}); err != nil || resp.Protocol != "h3" {
+				t.Fatalf("first visit: %v (over %v)", err, resp)
+			}
+
+			gate.blocked.Store(true)
+			start := time.Now()
+			resp, err := tr.Do(context.Background(), &Request{Method: method, URL: url + "x", Body: []byte("qty=1"), Timeout: 9 * time.Second})
+			took := time.Since(start)
+			if method == "GET" {
+				if err != nil || resp.Protocol != "h2" {
+					t.Fatalf("the GET should have gone over HTTP/2: %v (over %v)", err, resp)
+				}
+				if took > h3StallWindow+2*time.Second {
+					t.Fatalf("the GET took %v", took)
+				}
+			} else {
+				if err == nil {
+					t.Fatal("the POST went through a black-holed path")
+				}
+				if RequestNotSent(err) {
+					t.Fatalf("a POST written to the path was reported as not sent: %v", err)
+				}
+				if n := log.count("h2 POST"); n != 0 {
+					t.Fatalf("the POST was sent again over HTTP/2: %q", log.all())
+				}
+			}
+
+			start = time.Now()
+			resp, err = tr.Do(context.Background(), &Request{URL: url, Timeout: 20 * time.Second})
+			if err != nil || resp.Protocol != "h2" {
+				t.Fatalf("the next request: %v (over %v)", err, resp)
+			}
+			if took := time.Since(start); took > time.Second {
+				t.Fatalf("the next request took %v: it tried HTTP/3 first", took)
+			}
+		})
+	}
+}

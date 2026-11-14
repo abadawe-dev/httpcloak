@@ -2388,7 +2388,7 @@ func (t *Transport) doHTTP3(ctx context.Context, req *Request, fallback bool) (*
 	// the full deadline. roundTripHTTP3 bounds the first attempt and, on a stall,
 	// redials once biased to the other address family, when that cannot send the
 	// request twice.
-	resp, cleanup, err := t.roundTripHTTP3(ctx, snap.h3, httpReq, req, written)
+	resp, cleanup, err := t.roundTripHTTP3(ctx, snap.h3, httpReq, req, written, fallback)
 	if err != nil {
 		cleanup()
 		return nil, WrapError("roundtrip", host, port, "h3", h3NotSent(err, written))
@@ -2452,119 +2452,131 @@ func (t *Transport) doHTTP3(ctx context.Context, req *Request, fallback bool) (*
 	}, nil
 }
 
-// h3StallWindow bounds how long doHTTP3 waits for the first HTTP/3 response
-// before treating the winning QUIC path as dead. The default QUIC MaxIdleTimeout
-// is 30s with 15s keepalives, so a path that answers keepalives yet blackholes the
-// response (an IPv6 PMTU black hole) stays "alive" and would otherwise hang until
-// the request deadline. Five seconds sits well above normal first-byte latency but
-// recovers fast; a fully idle path already errors around here on its own. Only
-// applied when a retry is actually possible (see roundTripHTTP3).
+// h3StallWindow is how long an HTTP/3 request waits, once it has a connection,
+// for that connection to hear anything from the server before the path is
+// taken for dead (h3Watch). A live path acknowledges what the request sends
+// within the peer's max_ack_delay (25 ms by default) and a round trip, so five
+// seconds of silence is not a slow server; the same five seconds is QUIC's own
+// handshake timeout, which settles a connection still dialing.
 const h3StallWindow = 5 * time.Second
 
-// roundTripHTTP3 runs the HTTP/3 roundtrip with a bounded first attempt and, on a
-// stall over a still-alive-but-useless QUIC connection, drops that connection and
-// retries once biased to the other address family. It runs for every HTTP/3
-// request: forced HTTP/3, a host auto mode has cached as HTTP/3, and auto mode's
-// race when HTTP/3 connects first, after which there is no fallback to HTTP/2
-// for a request that may have been sent. When a retry cannot help (a body read
-// from a stream, which the first attempt consumes, or a budget too small to
-// carve out a stall window) it runs a single unbounded attempt.
+// roundTripHTTP3 sends httpReq over HTTP/3, watching the path it goes out on.
 //
-// A stall is a slow answer as far as anyone can tell, and a slow answer may be
-// a server at work on the request, so the retry follows CanResend: it goes out
-// when the first attempt never had a connection to write the request on
-// (gotConn, which doHTTP3's trace sets, is still false), or when the request is
-// idempotent. A request that is not, and went out, waits for its answer within
-// its own deadline, as it would with no stall window: a POST is never sent
-// twice for being slow.
-func (t *Transport) roundTripHTTP3(ctx context.Context, h3 *HTTP3Transport, httpReq *http.Request, req *Request, gotConn *atomic.Bool) (*http.Response, func(), error) {
+// A request whose connection has heard from the server since the request got
+// it is on a live path, and waits for its answer within its deadline, however
+// slow the server is: a slow answer is a server at work, perhaps on this very
+// request, and Chrome waits for it too.
+//
+// One whose connection has heard nothing in h3StallWindow is on a dead path:
+// that connection is taken out of the pool (and left open, so that any answer
+// still in flight on it can arrive). The request then goes again when that
+// cannot have it acted on twice: nothing of it was written (written, which
+// doHTTP3's trace sets, is false), or it is safe (SafeMethod) with a body held
+// in memory. With fallback, it is returned as an h3PathError for the caller to
+// send over HTTP/2; without, it goes once more over HTTP/3 on a new connection,
+// leading with IPv4 (an IPv6 black hole is the common cause). A request that
+// may have been written and is not safe waits for its answer within its own
+// deadline, and HTTP/3 is marked broken for its host (with fallback), so that
+// the requests after it go over HTTP/2.
+//
+// A connection that dies before its handshake completes is a dead path too
+// (the pool returns an h3PathError, nothing written), handled the same way.
+//
+// This used to give every request five seconds to get its answer's headers
+// and then close every HTTP/3 connection of the transport, to every host, and
+// send it again (when it was idempotent or never written). A slow answer on a
+// live connection (an overloaded store's) was cut off and asked for again from
+// scratch, and every request in flight on any other host lost its connection
+// and its answer: a payment's, an order's.
+func (t *Transport) roundTripHTTP3(ctx context.Context, h3 *HTTP3Transport, httpReq *http.Request, req *Request, written *atomic.Bool, fallback bool) (*http.Response, func(), error) {
 	noop := func() {}
-	deadline, hasDeadline := ctx.Deadline()
-	// A streaming body cannot be re-read on retry; only in-memory []byte bodies
-	// replay. Skip the bounded/retry dance unless the budget clears one stall
-	// window with room to spare, so a tight deadline keeps its single full attempt.
-	replayable := req.BodyReader == nil
-	if !replayable || !hasDeadline || time.Until(deadline) <= h3StallWindow+time.Second {
-		resp, err := h3.roundTrip(httpReq)
-		return resp, noop, err
+	resendable := func() bool {
+		return !written.Load() || (SafeMethod(httpReq.Method) && req.BodyReader == nil)
 	}
-	// Whether the first attempt may go again even if it was written.
-	idempotent := SafeMethod(httpReq.Method)
 
-	// First attempt on a stall-abortable child context. The stall window only
-	// bounds time-to-response-headers: RoundTrip returns once headers arrive and
-	// the body streams lazily afterward, so we must NOT cancel the context on
-	// success or the body read fails with H3_REQUEST_CANCELLED. On success we hand
-	// cancelAttempt back as the cleanup func, which doHTTP3 defers until after the
-	// body has been read.
+	// The attempt runs on a context of its own, so that a dead path can cut
+	// it off. On success, cancelAttempt is handed back as the cleanup, which
+	// doHTTP3 calls only after it has read the body: RoundTrip returns once
+	// the headers arrive and the body streams after, on this context.
+	watch := newH3Watch()
+	attemptCtx, cancelAttempt := context.WithCancel(withH3Watch(ctx, watch))
 	type rtResult struct {
 		resp *http.Response
 		err  error
 	}
-	attemptCtx, cancelAttempt := context.WithCancel(ctx)
 	done := make(chan rtResult, 1)
 	go func() {
 		resp, err := h3.roundTrip(httpReq.WithContext(attemptCtx))
 		done <- rtResult{resp, err}
 	}()
 
-	select {
-	case res := <-done:
-		if res.err == nil {
-			return res.resp, cancelAttempt, nil
-		}
-		cancelAttempt()
-		// Retry only a stall, only while the overall request budget survives,
-		// and only when that cannot send the request twice. A definitive
-		// transport error (not a stall), an exhausted parent deadline, or a
-		// request that went out and is not idempotent returns as-is.
-		if ctx.Err() != nil || !isH3Stall(res.err) || (gotConn.Load() && !idempotent) {
-			return res.resp, noop, res.err
-		}
-	case <-time.After(h3StallWindow):
-		if gotConn.Load() && !idempotent {
-			// The request went out and is not idempotent: wait for its answer
-			// within the request's own deadline rather than send it again.
-			res := <-done
-			if res.err != nil {
-				cancelAttempt()
+	ready := watch.ready
+	var stall <-chan time.Time
+	var ended *rtResult // the attempt's result, once it is in
+	for dead := false; !dead; {
+		select {
+		case res := <-done:
+			if res.err == nil {
+				return res.resp, cancelAttempt, nil
+			}
+			cancelAttempt()
+			if fallback || ctx.Err() != nil || !isH3PathError(res.err) || !resendable() {
 				return nil, noop, res.err
 			}
-			return res.resp, cancelAttempt, nil
-		}
-		// Headers never arrived within the window: abort this attempt, and wait
-		// for it to end, so that whether it had a connection is final. Should
-		// its answer have come in that moment, the cancel has cut its body off:
-		// release it.
-		cancelAttempt()
-		res := <-done
-		if res.resp != nil {
-			res.resp.Body.Close()
-		}
-		if ctx.Err() != nil {
-			return nil, noop, ctx.Err()
-		}
-		if gotConn.Load() && !idempotent {
-			// It got its connection in the moment before it was aborted, and
-			// may have written the request: that answer is lost, and the
-			// request is not sent again.
-			cause := res.err
-			if cause == nil {
-				cause = errors.New("its answer came as the attempt was abandoned")
-			}
-			return nil, noop, fmt.Errorf("no answer within %v, and the request may have been sent: %w", h3StallWindow, cause)
+			// Forced HTTP/3, and the connection died before its handshake:
+			// once more below.
+			ended, dead = &res, true
+		case <-ready:
+			ready = nil
+			timer := time.NewTimer(h3StallWindow)
+			defer timer.Stop()
+			stall = timer.C
+		case <-stall:
+			stall = nil
+			dead = watch.silent()
 		}
 	}
 
-	// The leading family handshook but stalled. Drop the dead connection and bias
-	// the redial to IPv4 (IPv6 black holes are the common trigger). Refresh is a
-	// broad hammer — it resets this session's H3 connections — but a stall is rare
-	// and forced-H3 sessions are single-purpose, so the cost is acceptable.
-	h3.SetIPv4FirstOverride(true)
-	defer h3.SetIPv4FirstOverride(false)
-	_ = h3.Refresh()
+	if ended == nil && !resendable() {
+		// It may have reached the server, and is not safe: it is not sent
+		// again, and waits for its answer, which may yet come should the path
+		// recover. The requests after it should not take this path.
+		if fallback {
+			t.h3Broken.mark(extractHost(req.URL), time.Now())
+		}
+		res := <-done
+		if res.err != nil {
+			cancelAttempt()
+			return nil, noop, res.err
+		}
+		return res.resp, cancelAttempt, nil
+	}
 
-	retryReq := httpReq.WithContext(ctx)
+	// Cut the attempt off, and wait for it to end, so that whether it wrote
+	// anything is final. An answer that came in that moment was cut off too:
+	// release it.
+	cancelAttempt()
+	res := ended
+	if res == nil {
+		r := <-done
+		res = &r
+	}
+	if res.resp != nil {
+		res.resp.Body.Close()
+	}
+	if ctx.Err() != nil {
+		return nil, noop, ctx.Err()
+	}
+	if !resendable() {
+		// It began to be written in the moment before it was cut off: that
+		// answer is lost, and the request is not sent again.
+		return nil, noop, fmt.Errorf("the path went silent, and the request may have been sent: %w", errOrPathSilent(res.err))
+	}
+	if fallback {
+		return nil, noop, &h3PathError{err: errOrPathSilent(res.err)}
+	}
+
+	retryReq := httpReq.WithContext(withIPv4First(ctx))
 	if req.BodyReader == nil && len(req.Body) > 0 {
 		retryReq.Body = io.NopCloser(bytes.NewReader(req.Body))
 	}
@@ -2572,20 +2584,13 @@ func (t *Transport) roundTripHTTP3(ctx context.Context, h3 *HTTP3Transport, http
 	return resp, noop, err
 }
 
-// isH3Stall reports whether an HTTP/3 roundtrip error looks like a stalled or dead
-// QUIC path (a bounded-attempt deadline, or QUIC's idle "no recent network
-// activity") rather than a definitive transport failure worth surfacing directly.
-func isH3Stall(err error) bool {
-	if err == nil {
-		return false
+// errOrPathSilent is err, the error a request cut off on a dead path ended
+// with, or, when it was cut off by the stall watch, what the watch saw.
+func errOrPathSilent(err error) error {
+	if isH3PathError(err) {
+		return err
 	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	s := strings.ToLower(err.Error())
-	return strings.Contains(s, "no recent network activity") ||
-		strings.Contains(s, "timeout") ||
-		strings.Contains(s, "deadline exceeded")
+	return fmt.Errorf("no packet from the server in the %v since the request had its connection", h3StallWindow)
 }
 
 // Close shuts down the transport
