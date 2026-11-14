@@ -408,6 +408,9 @@ func (t *HTTP2Transport) roundTrip(req *http.Request) (resp *http.Response, sent
 	if err != nil {
 		return nil, false, err
 	}
+	if name, ok := dnsHost(t.proxy, connectHost); ok {
+		t.dnsCache.KeepFresh(name)
+	}
 
 	// Mark conn as in-use so cleanup() doesn't close it mid-flight
 	conn.mu.Lock()

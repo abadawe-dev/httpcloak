@@ -233,6 +233,11 @@ func (t *HTTP3Transport) send(pool *h3Pool, req *http.Request) (*http.Response, 
 			closeRequestBody(req)
 			return nil, err
 		}
+		if !t.usesUDPProxy && t.masqueConn == nil {
+			// A direct dial resolves the origin; keep its entry fresh
+			// (dns.Cache.KeepFresh). Through a proxy, the proxy resolves it.
+			t.dnsCache.KeepFresh(hostOnly(origin))
+		}
 
 		var written atomic.Bool
 		attemptReq := req.WithContext(httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{

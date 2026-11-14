@@ -72,6 +72,9 @@ type Cache struct {
 	// when many requests start against a cold or just-expired name.
 	sf singleflight.Group
 
+	// refresh collapses KeepFresh's background lookups of one host into one.
+	refresh singleflight.Group
+
 	// lookupHook, when non-nil, replaces the system resolver call. It exists
 	// purely as a test seam (nil in all production paths) so the caching,
 	// single-flight, and negative-cache logic can be exercised deterministically.
@@ -202,45 +205,11 @@ func (c *Cache) Resolve(ctx context.Context, host string) ([]net.IP, error) {
 			return e.IPs, nil
 		}
 
-		// Run the shared lookup under a context detached from the leader caller,
-		// so a single cancelled caller can't abort the resolver call the other
-		// joined callers are still waiting on. WithoutCancel drops the deadline,
-		// so re-apply a bounded one.
-		lookupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), resolveLookupTimeout)
-		defer cancel()
-
-		ips, lerr := c.lookup(lookupCtx, host)
-		if lerr != nil {
-			if isTransientDNSErr(lerr) {
-				// Transient (timeout/temporary/network): serve a stale positive
-				// entry if we have one, and do NOT negative-cache — the name may
-				// be fine, the resolver just hiccuped.
-				// Only a stale entry from the family the cache is on: one
-				// resolved under a different family is not a usable answer for
-				// this caller, so serving it would turn a resolver hiccup into
-				// a host with no dialable address.
-				if ok && e.network == current && !e.negative && len(e.IPs) > 0 {
-					return e.IPs, nil
-				}
-				return nil, lerr
-			}
-			// Permanent (NXDOMAIN / no such host): drop any stale entry and
-			// negative-cache briefly so we don't re-resolve a dead name every
-			// request, while still recovering quickly if it comes back.
-			c.store(host, &Entry{negative: true, err: lerr, ExpiresAt: time.Now().Add(c.negTTL)})
-			return nil, lerr
+		var stale *Entry
+		if ok && e.network == current && !e.negative && len(e.IPs) > 0 {
+			stale = e
 		}
-		if len(ips) == 0 {
-			noAddr := &net.DNSError{Err: "no addresses found", Name: host, IsNotFound: true}
-			c.store(host, &Entry{negative: true, err: noAddr, ExpiresAt: time.Now().Add(c.negTTL)})
-			return nil, noAddr
-		}
-
-		c.mu.RLock()
-		ttl := c.defaultTTL
-		c.mu.RUnlock()
-		c.store(host, &Entry{IPs: ips, ExpiresAt: time.Now().Add(ttl), LookupAt: time.Now()})
-		return ips, nil
+		return c.lookupAndStore(ctx, host, stale)
 	})
 
 	// Wait on the CALLER's own ctx, not the leader's: a caller whose ctx is
@@ -255,6 +224,74 @@ func (c *Cache) Resolve(ctx context.Context, host string) ([]net.IP, error) {
 		}
 		return res.Val.([]net.IP), nil
 	}
+}
+
+// lookupAndStore looks host up and caches the answer. The lookup runs under a
+// context detached from ctx's cancellation (so one caller giving up cannot
+// abort a lookup others share) and bounded by resolveLookupTimeout. On a
+// transient failure it answers stale, an entry of the cache's current family
+// the lookup was replacing, when there is one, and caches nothing.
+func (c *Cache) lookupAndStore(ctx context.Context, host string, stale *Entry) ([]net.IP, error) {
+	lookupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), resolveLookupTimeout)
+	defer cancel()
+
+	ips, lerr := c.lookup(lookupCtx, host)
+	if lerr != nil {
+		if isTransientDNSErr(lerr) {
+			// Transient (timeout/temporary/network): serve the stale positive
+			// entry if there is one, and do NOT negative-cache: the name may
+			// be fine, the resolver just hiccuped.
+			if stale != nil {
+				return stale.IPs, nil
+			}
+			return nil, lerr
+		}
+		// Permanent (NXDOMAIN / no such host): drop any stale entry and
+		// negative-cache briefly so we don't re-resolve a dead name every
+		// request, while still recovering quickly if it comes back.
+		c.store(host, &Entry{negative: true, err: lerr, ExpiresAt: time.Now().Add(c.negTTL)})
+		return nil, lerr
+	}
+	if len(ips) == 0 {
+		noAddr := &net.DNSError{Err: "no addresses found", Name: host, IsNotFound: true}
+		c.store(host, &Entry{negative: true, err: noAddr, ExpiresAt: time.Now().Add(c.negTTL)})
+		return nil, noAddr
+	}
+
+	c.mu.RLock()
+	ttl := c.defaultTTL
+	c.mu.RUnlock()
+	c.store(host, &Entry{IPs: ips, ExpiresAt: time.Now().Add(ttl), LookupAt: time.Now()})
+	return ips, nil
+}
+
+// refreshAheadAfter is the share of an entry's lifetime after which a host in
+// use is looked up again ahead of its expiry (KeepFresh).
+const refreshAheadAfter = 0.8
+
+// KeepFresh looks host up again, in the background, when its entry has lived
+// past refreshAheadAfter of its lifetime: a transport calls it for each
+// request it sends to a host it reaches by name (the origin when it dials
+// directly, the proxy when it goes through one). So a host in use always has
+// a fresh entry, and the dial a dead connection or a burst of requests needs
+// is never held on the resolver, which may be slow or stalled (a lookup may
+// take up to resolveLookupTimeout). A host with no entry, or a negative one,
+// is left alone: the next dial looks it up.
+func (c *Cache) KeepFresh(host string) {
+	c.mu.RLock()
+	e, ok := c.entries[host]
+	current := c.network
+	c.mu.RUnlock()
+	if !ok || e.negative || e.network != current {
+		return
+	}
+	lifetime := e.ExpiresAt.Sub(e.LookupAt)
+	if time.Since(e.LookupAt) < time.Duration(float64(lifetime)*refreshAheadAfter) {
+		return
+	}
+	go c.refresh.Do(host, func() (interface{}, error) {
+		return c.lookupAndStore(context.Background(), host, e)
+	})
 }
 
 // store writes an entry under the write lock, sweeping expired entries inline

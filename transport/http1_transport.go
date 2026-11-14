@@ -427,6 +427,9 @@ func (t *HTTP1Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Use connect host for pool key (domain fronting: multiple request hosts share one connection)
 	connectHost := t.getConnectHost(host)
 	key := fmt.Sprintf("%s://%s:%s", scheme, connectHost, port)
+	if name, ok := dnsHost(t.proxy, connectHost); ok {
+		t.dnsCache.KeepFresh(name)
+	}
 
 	// A pooled connection first, if there is one. The server may have closed
 	// it since, at the very moment the request went out, and then the request
