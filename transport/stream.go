@@ -287,18 +287,30 @@ func (t *Transport) doStreamAuto(ctx context.Context, req *Request) (*StreamResp
 	if ok {
 		switch known {
 		case ProtocolHTTP3:
+			// As doHTTP3OrHTTP2: HTTP/2 while HTTP/3 is broken for the host.
+			switch t.h3Broken.standing(host, time.Now()) {
+			case h3IsBroken:
+				return t.doStreamHTTP2OrHTTP1(ctx, req)
+			case h3Recheck:
+				t.recheckH3(req.URL)
+				return t.doStreamHTTP2OrHTTP1(ctx, req)
+			}
 			resp, err := t.doStreamHTTP3(ctx, req)
 			if err == nil {
+				t.h3Broken.confirm(host)
 				return resp, nil
 			}
 			if !canResendOnAnotherProtocol(req, err) {
 				// A one-shot BodyReader may have been partially drained by the
-				// H3 attempt, and a request that is not idempotent may already
+				// H3 attempt, and a request that is not safe may already
 				// have reached the server. Surface the H3 error instead of
 				// sending a truncated or duplicate request.
 				return nil, err
 			}
 			resp, retryErr := t.doStreamHTTP2OrHTTP1(ctx, req)
+			if retryErr == nil && h3PathFailed(req, err) {
+				t.h3Broken.mark(host, time.Now())
+			}
 			return resp, laterAttempt(err, retryErr)
 		case ProtocolHTTP1:
 			return t.doStreamHTTP1(ctx, req)

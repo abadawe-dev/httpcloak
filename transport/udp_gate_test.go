@@ -2,7 +2,10 @@ package transport
 
 import (
 	"fmt"
+	"io"
 	"net"
+	stdhttp "net/http"
+	"net/http/httptest"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -112,4 +115,73 @@ func gatedH3Origin(t *testing.T, handler shttp.HandlerFunc) (*udpGate, string) {
 	time.Sleep(100 * time.Millisecond)
 	g := startUDPGate(t, conn.LocalAddr().(*net.UDPAddr))
 	return g, fmt.Sprintf("https://127.0.0.1:%d/", g.port())
+}
+
+// protoLog records the requests an origin served, as "<protocol> <method>".
+type protoLog struct {
+	mu   sync.Mutex
+	seen []string
+}
+
+func (l *protoLog) add(proto, method string) {
+	l.mu.Lock()
+	l.seen = append(l.seen, proto+" "+method)
+	l.mu.Unlock()
+}
+
+func (l *protoLog) count(entry string) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	n := 0
+	for _, s := range l.seen {
+		if s == entry {
+			n++
+		}
+	}
+	return n
+}
+
+func (l *protoLog) all() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.seen...)
+}
+
+// gatedDualOrigin is one origin, 127.0.0.1:port, that speaks HTTP/3 through a
+// udpGate and HTTP/2 over TCP on the same port, as a CDN edge does. Each
+// request is logged and answered after delay(proto).
+func gatedDualOrigin(t *testing.T, log *protoLog, delay func(proto string) time.Duration) (*udpGate, string) {
+	t.Helper()
+	wait := func(proto string, done <-chan struct{}) {
+		select {
+		case <-time.After(delay(proto)):
+		case <-done:
+		}
+	}
+	gate, url := gatedH3Origin(t, func(w shttp.ResponseWriter, r *shttp.Request) {
+		io.Copy(io.Discard, r.Body)
+		log.add("h3", r.Method)
+		wait("h3", r.Context().Done())
+		w.Write([]byte("ok"))
+	})
+	l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", gate.port()))
+	if err != nil {
+		t.Skipf("TCP port %d is taken: %v", gate.port(), err)
+	}
+	srv := httptest.NewUnstartedServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		io.Copy(io.Discard, r.Body)
+		proto := "h1"
+		if r.ProtoMajor == 2 {
+			proto = "h2"
+		}
+		log.add(proto, r.Method)
+		wait(proto, r.Context().Done())
+		w.Write([]byte("ok"))
+	}))
+	srv.Listener.Close()
+	srv.Listener = l
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	return gate, url
 }

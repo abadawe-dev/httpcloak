@@ -640,6 +640,10 @@ type Transport struct {
 	protocolSupport   map[string]Protocol // Best known protocol per host
 	protocolSupportMu sync.RWMutex
 
+	// h3Broken holds the hosts auto mode sends over HTTP/2 for a while because
+	// HTTP/3 stopped working for them.
+	h3Broken brokenH3
+
 	// Configuration
 	insecureSkipVerify bool
 	tlsVerify          *TLSVerify
@@ -1493,7 +1497,7 @@ func (t *Transport) Do(ctx context.Context, req *Request) (*Response, error) {
 			if !SupportsQUIC(udpEffectiveProxyURL) {
 				return nil, fmt.Errorf("HTTP/3 requires a SOCKS5 or MASQUE proxy (current proxy does not support UDP)")
 			}
-			return t.doHTTP3(ctx, req)
+			return t.doHTTP3(ctx, req, false)
 
 		case ProtocolAuto:
 			// Auto-select based on proxy capabilities
@@ -1512,7 +1516,7 @@ func (t *Transport) Do(ctx context.Context, req *Request) (*Response, error) {
 					// UDP-only proxy (MASQUE): only H3 can reach the target. Racing
 					// would fire an H2 probe that dials direct and leaks the real
 					// IP + SNI, so go straight to H3 with no TCP fallback.
-					return t.doHTTP3(ctx, req)
+					return t.doHTTP3(ctx, req, false)
 				}
 				// SOCKS5 or MASQUE proxy. Race H3 and H2 instead of trying H3
 				// first: when QUIC cannot actually relay through the proxy, the
@@ -1541,7 +1545,7 @@ func (t *Transport) Do(ctx context.Context, req *Request) (*Response, error) {
 	case ProtocolHTTP2:
 		return t.doHTTP2(ctx, req)
 	case ProtocolHTTP3:
-		return t.doHTTP3(ctx, req)
+		return t.doHTTP3(ctx, req, false)
 	case ProtocolAuto:
 		return t.doAuto(ctx, req)
 	default:
@@ -1566,7 +1570,7 @@ func (t *Transport) doAuto(ctx context.Context, req *Request) (*Response, error)
 	if known {
 		switch knownProtocol {
 		case ProtocolHTTP3:
-			return t.doHTTP3(ctx, req)
+			return t.doHTTP3OrHTTP2(ctx, req, host)
 		case ProtocolHTTP2:
 			return t.doHTTP2OrHTTP1(ctx, req)
 		case ProtocolHTTP1:
@@ -1594,6 +1598,11 @@ func (t *Transport) doAuto(ctx context.Context, req *Request) (*Response, error)
 	// Race HTTP/3 and HTTP/2 in parallel if H3 is supported
 	if snap.preset.SupportHTTP3 && snap.h3 != nil {
 		resp, protocol, err := t.raceH3H2(ctx, req)
+		if protocol == ProtocolHTTP3 {
+			// HTTP/3 connected: the host is cached as HTTP/3, and
+			// doHTTP3OrHTTP2 made every attempt there is to make.
+			return resp, err
+		}
 		if err == nil {
 			t.protocolSupportMu.Lock()
 			t.protocolSupport[host] = protocol
@@ -1931,7 +1940,9 @@ func (t *Transport) raceH3H2(ctx context.Context, req *Request) (*Response, Prot
 
 	switch decision.protocol {
 	case ProtocolHTTP3:
-		resp, err := t.doHTTP3(ctx, req)
+		host := extractHost(req.URL)
+		t.cacheProtocol(host, ProtocolHTTP3)
+		resp, err := t.doHTTP3OrHTTP2(ctx, req, host)
 		return resp, ProtocolHTTP3, err
 	default: // ProtocolHTTP2 (also the no-winner default)
 		resp, err := t.doHTTP2(ctx, req)
@@ -2293,8 +2304,10 @@ func (t *Transport) doHTTP2(ctx context.Context, req *Request) (*Response, error
 	}, nil
 }
 
-// doHTTP3 executes the request over HTTP/3
-func (t *Transport) doHTTP3(ctx context.Context, req *Request) (*Response, error) {
+// doHTTP3 executes the request over HTTP/3. fallback says whether the caller
+// sends a request HTTP/3 could not deliver over HTTP/2 (auto mode), or HTTP/3
+// is all there is (forced HTTP/3, a UDP-only proxy).
+func (t *Transport) doHTTP3(ctx context.Context, req *Request, fallback bool) (*Response, error) {
 	snap := t.snapshot()
 	startTime := time.Now()
 	timing := &protocol.Timing{}
@@ -2328,7 +2341,7 @@ func (t *Transport) doHTTP3(ctx context.Context, req *Request) (*Response, error
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	ctx, gotConn := withH3SendTrace(ctx)
+	ctx, written := withH3SendTrace(ctx)
 
 	// Build HTTP request
 	method := req.Method
@@ -2375,10 +2388,10 @@ func (t *Transport) doHTTP3(ctx context.Context, req *Request) (*Response, error
 	// the full deadline. roundTripHTTP3 bounds the first attempt and, on a stall,
 	// redials once biased to the other address family, when that cannot send the
 	// request twice.
-	resp, cleanup, err := t.roundTripHTTP3(ctx, snap.h3, httpReq, req, gotConn)
+	resp, cleanup, err := t.roundTripHTTP3(ctx, snap.h3, httpReq, req, written)
 	if err != nil {
 		cleanup()
-		return nil, WrapError("roundtrip", host, port, "h3", h3NotSent(err, gotConn))
+		return nil, WrapError("roundtrip", host, port, "h3", h3NotSent(err, written))
 	}
 	// cleanup releases the first-attempt context (if one was armed) only after the
 	// body has been read below, so lazy body streaming is not cancelled early.

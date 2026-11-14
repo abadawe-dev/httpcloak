@@ -78,3 +78,72 @@ func TestTheConnectRaceConnectionCarriesTheRequest(t *testing.T) {
 		t.Fatalf("%d QUIC connections for one request, want 1", dials)
 	}
 }
+
+// A host that worked over HTTP/3 was sent over HTTP/3 for the life of the
+// session. When UDP stopped getting through, each of its requests failed after
+// about ten seconds, every one, until the session was rebuilt. A request that
+// HTTP/3 never sent now goes over HTTP/2 within its deadline, once; HTTP/3 is
+// marked broken for the host, so the requests after it go straight to HTTP/2;
+// and when the brokenness expires, HTTP/3 is checked again in the background
+// and taken back up once it connects.
+func TestAHostWhoseHTTP3PathDiesIsSentOverHTTP2(t *testing.T) {
+	var log protoLog
+	gate, url := gatedDualOrigin(t, &log, func(string) time.Duration { return 0 })
+	tr := h3Transport(t, ProtocolAuto)
+	tr.cacheProtocol(extractHost(url), ProtocolHTTP3)
+
+	if resp, err := tr.Do(context.Background(), &Request{URL: url}); err != nil || resp.Protocol != "h3" {
+		t.Fatalf("first visit: %v (over %v)", err, resp)
+	}
+	time.Sleep(200 * time.Millisecond) // the ticket arrives after the answer
+	// The connection idled out; the next one resumes the session.
+	tr.h3Transport.closeOrigin(fmt.Sprintf("127.0.0.1:%d", gate.port()))
+
+	gate.blocked.Store(true)
+	start := time.Now()
+	resp, err := tr.Do(context.Background(), &Request{Method: "POST", URL: url + "order", Body: []byte("qty=1"), Timeout: 20 * time.Second})
+	if err != nil {
+		t.Fatalf("the POST should have gone over HTTP/2 once HTTP/3 failed to connect: %v", err)
+	}
+	if resp.Protocol != "h2" {
+		t.Fatalf("answered over %s, want h2", resp.Protocol)
+	}
+	if took := time.Since(start); took > 12*time.Second {
+		t.Fatalf("the POST took %v", took)
+	}
+	if n := log.count("h2 POST") + log.count("h3 POST"); n != 1 {
+		t.Fatalf("the server read the POST %d times, want once: %q", n, log.all())
+	}
+
+	// Broken: the next request goes straight to HTTP/2.
+	start = time.Now()
+	resp, err = tr.Do(context.Background(), &Request{URL: url, Timeout: 20 * time.Second})
+	if err != nil || resp.Protocol != "h2" {
+		t.Fatalf("while HTTP/3 is broken: %v (over %v)", err, resp)
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Fatalf("a request while HTTP/3 is broken took %v: it tried HTTP/3 first", took)
+	}
+
+	// The path comes back. Once the brokenness expires, a request still goes
+	// over HTTP/2 while HTTP/3 is checked, and the next ones go over HTTP/3.
+	gate.blocked.Store(false)
+	time.Sleep(brokenH3Initial)
+	if resp, err := tr.Do(context.Background(), &Request{URL: url, Timeout: 20 * time.Second}); err != nil || resp.Protocol != "h2" {
+		t.Fatalf("the request that starts the check: %v (over %v)", err, resp)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		resp, err := tr.Do(context.Background(), &Request{URL: url, Timeout: 20 * time.Second})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.Protocol == "h3" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("HTTP/3 was not taken back up after the path recovered: %q", log.all())
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
