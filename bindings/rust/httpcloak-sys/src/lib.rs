@@ -128,6 +128,7 @@ extern "C" {
         callback_id: i64,
     );
     pub fn httpcloak_request_async(handle: i64, request_json: *const c_char, callback_id: i64);
+    pub fn httpcloak_preconnect_async(handle: i64, url: *const c_char, callback_id: i64);
 
     // --- Cookies ---
     pub fn httpcloak_get_cookies(handle: i64) -> *mut c_char;

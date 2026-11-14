@@ -137,3 +137,47 @@ async fn a_stream_header_timeout_is_exact() {
     assert!(e.is_timeout(), "{e}");
     assert!(start.elapsed() < Duration::from_millis(1500), "{:?}", start.elapsed());
 }
+
+/// A preconnect opens the connection the next request goes out on and sends
+/// nothing; a second one, and the request, open no other.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_preconnect_opens_the_connection_the_request_uses() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/", listener.local_addr().unwrap());
+    let accepted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let (heads, received) = std::sync::mpsc::channel();
+    let counted = accepted.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            counted.fetch_add(1, Ordering::SeqCst);
+            let heads = heads.clone();
+            std::thread::spawn(move || loop {
+                let head = read_head(&mut stream);
+                if head.is_empty() {
+                    return;
+                }
+                let _ = heads.send(head);
+                write(&mut stream, b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
+            });
+        }
+    });
+
+    let s = session();
+    s.preconnect(&url).await.unwrap();
+    s.preconnect(&url).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(accepted.load(Ordering::SeqCst), 1, "two preconnects, one connection");
+    assert!(received.try_recv().is_err(), "a preconnect sent a request");
+
+    assert_eq!(s.get(&url).send_async().await.unwrap().status(), 200);
+    assert!(received.try_recv().is_ok());
+    assert_eq!(accepted.load(Ordering::SeqCst), 1, "the request opened a connection of its own");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_preconnect_that_cannot_connect_says_why() {
+    let e = session().preconnect(&refused_url()).await.unwrap_err();
+    assert!(e.is_connect(), "{e:?}");
+    assert!(session().preconnect("ftp://example.com/").await.unwrap_err().is_invalid_input());
+}

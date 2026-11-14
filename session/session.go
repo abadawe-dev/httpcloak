@@ -1108,6 +1108,20 @@ func (s *Session) askedClientHints(host string) []clientHint {
 	return asked
 }
 
+// Preconnect opens the connection a request to rawURL would go out on, and
+// sends no request (transport.Transport.Preconnect): DNS, then TCP and TLS
+// (through the proxy's CONNECT when there is one) or QUIC. When that
+// connection is open already it does nothing.
+func (s *Session) Preconnect(ctx context.Context, rawURL string) error {
+	s.mu.RLock()
+	active := s.active
+	s.mu.RUnlock()
+	if !active {
+		return ErrSessionClosed
+	}
+	return s.transport.Preconnect(ctx, rawURL)
+}
+
 // AskedClientHints returns the names of the high-entropy client hints
 // the session adds to a request to rawURL that sets none of them itself: the
 // ones its host has asked for with Accept-CH, unless the session sends no

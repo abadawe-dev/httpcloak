@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::ffi::c_int;
 use std::fmt;
+use std::future::Future;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -10,6 +11,7 @@ use http::Method;
 use httpcloak_sys as sys;
 use serde::{Deserialize, Serialize};
 
+use crate::call::{Call, Leftover};
 use crate::cookie::{Cookie, WireCookie};
 use crate::error::{Error, ErrorKind, Result};
 use crate::ffi::{self, cpath, cstring};
@@ -716,6 +718,46 @@ impl Session {
         match result.as_deref().filter(|r| ffi::error_in(r).is_some()) {
             Some(error) => Err(ffi::library_error(error)),
             None => Ok(()),
+        }
+    }
+
+    /// Opens the connection a request to `url` would go out on, and sends no
+    /// request: DNS, then TCP and TLS (through the proxy's `CONNECT` when there
+    /// is one) or QUIC, on the protocol a request would take. When that
+    /// connection is open already it does nothing. The next request to the
+    /// host then goes out on it with no handshake to wait for.
+    ///
+    /// It is what a browser does for `<link rel=preconnect>`: a server sees a
+    /// connection, and no request. Call it for every host a burst of requests
+    /// is about to need, together, as soon as you know.
+    ///
+    /// It is bounded by the session's timeout, and dropping the future
+    /// cancels it. A host the session has not been to is raced over HTTP/3
+    /// and HTTP/2, as for a request, and the winner remembered. An HTTP/1.1
+    /// connection waits for the request among the host's idle ones, for as
+    /// long as an idle connection is kept (90 seconds); an HTTP/2 or HTTP/3
+    /// one for as long as the server keeps it (an idle QUIC connection ends
+    /// after 30 seconds, as Chrome's does).
+    // Not an async fn, so that the future being Send and 'static is part of
+    // the signature rather than inferred from the body.
+    #[allow(clippy::manual_async_fn)]
+    pub fn preconnect(&self, url: &str) -> impl Future<Output = Result<()>> + Send + 'static {
+        let session = self.clone();
+        let url = url.to_owned();
+        async move {
+            check_scheme(&url)?;
+            let c_url = cstring(&url, "the URL")?;
+            let handle = session.handle();
+            let call = Call::start(Leftover::Discard, |id| {
+                // SAFETY: the session is alive (we hold it), and the URL is a
+                // valid NUL-terminated string the export copies before it
+                // returns.
+                unsafe { sys::httpcloak_preconnect_async(handle, c_url.as_ptr(), id) }
+            })?;
+            call.into_future(None)
+                .await
+                .map(|_| ())
+                .map_err(|e| e.with_hosts(&crate::request::hosts_involved(&session, &url)).with_url(&url))
         }
     }
 

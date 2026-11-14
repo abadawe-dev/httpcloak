@@ -2115,6 +2115,37 @@ func httpcloak_request_async(handle C.int64_t, requestJSON *C.char, callbackID C
 	}()
 }
 
+// httpcloak_preconnect_async opens the connection a request to url would go
+// out on, and sends no request (Session.Preconnect). It reports to callbackID
+// as a request does: an empty JSON object once the connection is open, or the
+// error. httpcloak_cancel_request cancels it.
+//
+//export httpcloak_preconnect_async
+func httpcloak_preconnect_async(handle C.int64_t, url *C.char, callbackID C.int64_t) {
+	defer guardVoid("httpcloak_preconnect_async")
+	session := getSession(handle)
+	rawURL := C.GoString(url)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	callbackMu.Lock()
+	cancelFuncs[int64(callbackID)] = cancel
+	callbackMu.Unlock()
+
+	go func() {
+		defer cancel()
+		defer guardAsync("preconnect_async goroutine", int64(callbackID))
+		if session == nil {
+			invokeCallback(int64(callbackID), "", errorJSON(ErrInvalidSession))
+			return
+		}
+		if err := session.Preconnect(ctx, rawURL); err != nil {
+			invokeCallback(int64(callbackID), "", errorJSON(err))
+			return
+		}
+		invokeCallback(int64(callbackID), "{}", "")
+	}()
+}
+
 // ============================================================================
 // Cookie Management
 // ============================================================================

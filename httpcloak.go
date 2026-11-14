@@ -1336,6 +1336,15 @@ func (s *Session) CookiesFor(url string) []CookieInfo {
 	return s.inner.CookiesFor(url)
 }
 
+// Preconnect opens the connection a request to url would go out on, and sends
+// no request: DNS, then TCP and TLS (through the proxy's CONNECT when there is
+// one) or QUIC, on the protocol a request would take. When that connection is
+// open already it does nothing. It is what a browser does for
+// <link rel=preconnect>, bounded by the session's timeout or ctx.
+func (s *Session) Preconnect(ctx context.Context, url string) error {
+	return s.inner.Preconnect(ctx, url)
+}
+
 // AskedClientHints returns the names of the high-entropy client hints the
 // session adds to a request to url that sets none of them itself: the ones its
 // host has asked for with Accept-CH.
