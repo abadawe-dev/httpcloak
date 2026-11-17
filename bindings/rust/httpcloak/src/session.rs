@@ -206,6 +206,8 @@ struct Config {
     quic_idle_timeout: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     local_address: Option<String>,
+    #[serde(skip_serializing_if = "is_false")]
+    public_addresses_only: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     key_log_file: Option<String>,
     #[serde(skip_serializing_if = "is_false")]
@@ -433,6 +435,22 @@ impl SessionBuilder {
     /// The local address to send from, e.g. to rotate through an IPv6 range.
     pub fn local_address(mut self, address: IpAddr) -> Self {
         self.config.local_address = Some(address.to_string());
+        self
+    }
+
+    /// Connect directly to public internet addresses only, as Chrome's Local
+    /// Network Access keeps a public page from this machine and its network:
+    /// refuse loopback, private (RFC 1918, `fc00::/7`), shared (`100.64.0.0/10`),
+    /// link-local, unspecified, broadcast and multicast addresses, however
+    /// spelled (IPv4-mapped too). Each address is checked as it is dialled,
+    /// after DNS, so a public name that resolves to one of them fails as the
+    /// address itself does: with [`ErrorKind::Connect`], [not
+    /// sent](crate::Error::is_not_sent). Through a proxy nothing is checked,
+    /// since the proxy resolves the host. Forks keep it.
+    ///
+    /// [`ErrorKind::Connect`]: crate::ErrorKind::Connect
+    pub fn public_addresses_only(mut self, only: bool) -> Self {
+        self.config.public_addresses_only = only;
         self
     }
 
@@ -1124,6 +1142,7 @@ mod tests {
             .tls_only(true)
             .quic_idle_timeout(Duration::from_secs(10))
             .local_address("::1".parse().unwrap())
+            .public_addresses_only(true)
             .key_log_file("/tmp/keys")
             .disable_ech(true)
             .disable_http3(true)
@@ -1151,7 +1170,8 @@ mod tests {
                 "max_redirects": 3, "retry": 2, "retry_wait_min": 100, "retry_wait_max": 2000,
                 "retry_on_status": [429, 503], "prefer_ipv4": true, "connect_to": {"a.com": "b.com"},
                 "ech_config_domain": "cloudflare-ech.com", "tls_only": true, "quic_idle_timeout": 10,
-                "local_address": "::1", "key_log_file": "/tmp/keys", "disable_ech": true,
+                "local_address": "::1", "public_addresses_only": true, "key_log_file": "/tmp/keys",
+                "disable_ech": true,
                 "disable_http3": true, "enable_speculative_tls": true, "switch_protocol": "h3",
                 "without_cookie_jar": true, "without_conditional_cache": true,
                 "without_client_hints": true, "without_high_entropy_client_hints": true,

@@ -363,6 +363,10 @@ type HTTP3Transport struct {
 
 	// Local address for binding outgoing connections (IPv6 rotation)
 	localAddr string
+
+	// Refuse direct connections to non-public addresses
+	// (TransportConfig.PublicAddressesOnly)
+	publicOnly bool
 }
 
 // SetInsecureSkipVerify sets whether to skip TLS certificate verification
@@ -608,6 +612,7 @@ func NewHTTP3TransportWithTransportConfig(preset *fingerprint.Preset, dnsCache *
 	if config != nil && config.LocalAddr != "" {
 		t.localAddr = config.LocalAddr
 	}
+	t.publicOnly = config != nil && config.PublicAddressesOnly
 
 	// No socket is opened here: each direct dial opens its own (dialDirect),
 	// so a transport that never dials HTTP/3 holds none.
@@ -670,6 +675,7 @@ func NewHTTP3TransportWithConfig(preset *fingerprint.Preset, dnsCache *dns.Cache
 	if config != nil && config.LocalAddr != "" {
 		t.localAddr = config.LocalAddr
 	}
+	t.publicOnly = config != nil && config.PublicAddressesOnly
 
 	// Get ClientHelloID for TLS fingerprinting
 	var clientHelloID *utls.ClientHelloID
@@ -789,6 +795,7 @@ func NewHTTP3TransportWithMASQUE(preset *fingerprint.Preset, dnsCache *dns.Cache
 	if config != nil && config.LocalAddr != "" {
 		t.localAddr = config.LocalAddr
 	}
+	t.publicOnly = config != nil && config.PublicAddressesOnly
 
 	// Get ClientHelloID for TLS fingerprinting
 	var clientHelloID *utls.ClientHelloID
@@ -1282,6 +1289,9 @@ func (s *directSocket) close() {
 // sent every connection of a session from one source port, which a server can
 // link; a browser's come from different ports.
 func (t *HTTP3Transport) dialDirect(ctx context.Context, addr *net.UDPAddr, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
+	if err := checkPublic(t.publicOnly, addr.IP); err != nil {
+		return nil, err
+	}
 	network, local := "udp4", &net.UDPAddr{IP: net.IPv4zero}
 	if addr.IP.To4() == nil {
 		network, local = "udp6", &net.UDPAddr{IP: net.IPv6zero}

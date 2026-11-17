@@ -178,6 +178,31 @@ fn runtime_settings_round_trip() {
 }
 
 #[test]
+fn a_public_addresses_only_session_never_connects_to_this_machine() {
+    let s = Session::builder()
+        .public_addresses_only(true)
+        .danger_accept_invalid_certs(true)
+        .timeout(Duration::from_secs(20))
+        .build()
+        .unwrap();
+    // `https` is reached by the name `localhost`, `http` by 127.0.0.1; both
+    // answer a session without the option.
+    for url in [
+        https("/echo"),
+        http("/echo"),
+        format!("https://[::ffff:127.0.0.1]:{}/echo", servers().https.rsplit(':').next().unwrap()),
+    ] {
+        session().get(&url).send().unwrap_or_else(|e| panic!("{url} without the option: {e}"));
+        for s in [&s, &s.fork().unwrap()] {
+            let e = s.post(&url).body("x").send().unwrap_err();
+            assert_eq!(e.kind(), ErrorKind::Connect, "{url}: {e}");
+            assert!(e.is_not_sent(), "{url}: {e}");
+            assert!(e.message().contains("public address"), "{url}: {e}");
+        }
+    }
+}
+
+#[test]
 fn a_dead_proxy_is_a_proxy_error() {
     let s =
         Session::builder().proxy(refused_url().trim_end_matches('/')).timeout(Duration::from_secs(5)).build().unwrap();

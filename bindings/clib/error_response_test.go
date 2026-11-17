@@ -76,6 +76,12 @@ func TestFailuresCrossWithWhatTheirTypesSay(t *testing.T) {
 		answering(fmt.Sprintf("HTTP/1.1 302 Found\r\nLocation: http://%s/again\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", loop), 0)(c)
 	})
 
+	// An answering server, reached by a name that resolves to this machine,
+	// which a session that connects to public addresses only never connects
+	// to, on any protocol.
+	_, answers, _ := net.SplitHostPort(listen(t, answering("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n", 0)))
+	publicOnly := `{"preset":"chrome-latest","public_addresses_only":true`
+
 	cases := []struct {
 		name    string
 		session string
@@ -101,6 +107,18 @@ func TestFailuresCrossWithWhatTheirTypesSay(t *testing.T) {
 		{"hung up after the request", `{"preset":"chrome-latest"}`,
 			`{"method":"POST","url":"http://` + hangsUp + `/pay","body":"x"}`,
 			ErrorResponse{}},
+		{"local address refused over HTTP/1.1", publicOnly + `}`,
+			`{"method":"POST","url":"http://localhost:` + answers + `/pay","body":"x"}`,
+			ErrorResponse{Code: "connect", NotSent: true}},
+		{"local address refused over HTTP/2", publicOnly + `,"http_version":"h2"}`,
+			`{"method":"POST","url":"https://localhost:` + answers + `/pay","body":"x"}`,
+			ErrorResponse{Code: "connect", NotSent: true}},
+		{"local address refused over HTTP/3", publicOnly + `,"http_version":"h3","disable_ech":true}`,
+			`{"method":"POST","url":"https://localhost:` + answers + `/pay","body":"x"}`,
+			ErrorResponse{Code: "connect", NotSent: true}},
+		{"local address refused in auto mode", publicOnly + `,"disable_ech":true}`,
+			`{"method":"POST","url":"https://[::ffff:127.0.0.1]:` + answers + `/pay","body":"x"}`,
+			ErrorResponse{Code: "connect", NotSent: true}},
 		{"too many redirects", `{"preset":"chrome-latest","max_redirects":2}`,
 			`{"method":"GET","url":"http://` + loop + `/"}`,
 			ErrorResponse{Code: "redirect"}},

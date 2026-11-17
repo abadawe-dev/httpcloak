@@ -139,6 +139,17 @@ type TransportConfig struct {
 	// Used for IPv6 rotation with IP_FREEBIND on Linux.
 	LocalAddr string
 
+	// PublicAddressesOnly refuses a direct connection to an address that is
+	// not on the public internet: loopback, private (RFC 1918, fc00::/7),
+	// shared (100.64.0.0/10), link-local, unspecified, broadcast or multicast,
+	// however spelled. Each address is checked as it is dialled, so a public
+	// name that resolves to this machine or its network is refused as an IP
+	// literal is, with a *LocalAddressError that RequestNotSent is true for.
+	// Connections through a proxy are not checked: the proxy resolves the
+	// request's host. For running a page's scripts, whose requests Chrome's
+	// Local Network Access keeps from this machine and its network.
+	PublicAddressesOnly bool
+
 	// SessionCacheBackend is an optional distributed cache for TLS sessions.
 	// When set, TLS session tickets will be stored/retrieved from this backend,
 	// enabling session sharing across multiple instances.

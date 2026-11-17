@@ -622,6 +622,7 @@ type sessionConfig struct {
 	tlsOnly                       bool              // TLS-only mode: skip preset headers, set all manually
 	quicIdleTimeout               time.Duration     // QUIC idle timeout (default: 30s)
 	localAddr                     string            // Local IP address to bind outgoing connections
+	publicAddressesOnly           bool              // Refuse direct connections to non-public addresses
 	keyLogFile                    string            // Path to write TLS key log for Wireshark decryption
 	disableECH                    bool              // Disable ECH lookup for faster first request
 	enableSpeculativeTLS          bool              // Enable speculative TLS optimization for proxy connections
@@ -848,6 +849,21 @@ func WithLocalAddrIP(ip net.IP) SessionOption {
 			return
 		}
 		c.localAddr = ip.String()
+	}
+}
+
+// WithPublicAddressesOnly refuses to connect directly to an address that is
+// not on the public internet: loopback, private (RFC 1918, fc00::/7), shared
+// (100.64.0.0/10), link-local, unspecified, broadcast or multicast, however
+// spelled. Each address is checked as it is dialled, after DNS, so a public
+// name that resolves to this machine or its network is refused as an IP
+// literal is; the request fails with a *transport.LocalAddressError and was
+// not sent. Connections through a proxy are not checked (the proxy resolves
+// the host). For sessions that carry a web page's own requests, which
+// Chrome's Local Network Access keeps from this machine and its network.
+func WithPublicAddressesOnly() SessionOption {
+	return func(c *sessionConfig) {
+		c.publicAddressesOnly = true
 	}
 }
 
@@ -1129,6 +1145,7 @@ func NewSession(preset string, opts ...SessionOption) *Session {
 		TLSOnly:                       cfg.tlsOnly,
 		QuicIdleTimeout:               int(cfg.quicIdleTimeout.Seconds()),
 		LocalAddress:                  cfg.localAddr,
+		PublicAddressesOnly:           cfg.publicAddressesOnly,
 		KeyLogFile:                    cfg.keyLogFile,
 		DisableECH:                    cfg.disableECH,
 		EnableSpeculativeTLS:          cfg.enableSpeculativeTLS,

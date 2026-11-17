@@ -215,6 +215,10 @@ type SessionConfig struct {
 	PreferIPv4   bool   `json:"preferIpv4,omitempty"`   // Prefer IPv4 addresses over IPv6
 	LocalAddress string `json:"localAddress,omitempty"` // Local IP to bind outgoing connections (for IPv6 rotation)
 
+	// PublicAddressesOnly refuses direct connections to addresses that are not
+	// on the public internet (see transport.TransportConfig.PublicAddressesOnly)
+	PublicAddressesOnly bool `json:"publicAddressesOnly,omitempty"`
+
 	// Domain fronting: request_host -> connect_host mapping
 	ConnectTo map[string]string `json:"connectTo,omitempty"`
 

@@ -48,6 +48,7 @@ type HTTP1Transport struct {
 	insecureSkipVerify  bool
 	tlsVerify           *TLSVerify
 	localAddr           string // Local IP to bind outgoing connections
+	publicOnly          bool   // Refuse direct connections to non-public addresses (TransportConfig.PublicAddressesOnly)
 
 	// Cleanup
 	stopCleanup chan struct{}
@@ -335,6 +336,7 @@ func NewHTTP1TransportWithConfig(preset *fingerprint.Preset, dnsCache *dns.Cache
 	if config != nil && config.LocalAddr != "" {
 		t.localAddr = config.LocalAddr
 	}
+	t.publicOnly = config != nil && config.PublicAddressesOnly
 
 	go t.cleanupLoop()
 
@@ -805,6 +807,9 @@ func (t *HTTP1Transport) createConn(ctx context.Context, host, port, scheme stri
 		// + ctx; losing connections are closed.
 		rawConn, err = staggeredRace(ctx, len(ips), 250*time.Millisecond,
 			func(rctx context.Context, idx int) (net.Conn, error) {
+				if err := checkPublic(t.publicOnly, ips[idx]); err != nil {
+					return nil, err
+				}
 				network := "tcp4"
 				if ips[idx].To4() == nil {
 					network = "tcp6"

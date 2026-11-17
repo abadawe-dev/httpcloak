@@ -321,6 +321,7 @@ type SessionConfig struct {
 	TLSOnly                       bool                   `json:"tls_only,omitempty"`                          // TLS-only mode: skip preset headers, set all manually
 	QuicIdleTimeout               int                    `json:"quic_idle_timeout,omitempty"`                 // QUIC idle timeout in seconds (default: 30)
 	LocalAddress                  string                 `json:"local_address,omitempty"`                     // Local IP to bind outgoing connections (IPv6 rotation)
+	PublicAddressesOnly           bool                   `json:"public_addresses_only,omitempty"`             // Refuse direct connections to non-public addresses
 	KeyLogFile                    string                 `json:"key_log_file,omitempty"`                      // Path to write TLS key log for Wireshark decryption
 	DisableECH                    bool                   `json:"disable_ech,omitempty"`                       // Disable ECH lookup for faster first request
 	DisableHTTP3                  bool                   `json:"disable_http3,omitempty"`                     // Disable HTTP/3 racing while keeping H1/H2 negotiation
@@ -386,6 +387,11 @@ func errorCode(err error) string {
 	var refused *transport.ProxyStatusError
 	if errors.As(err, &refused) {
 		return "proxy"
+	}
+	// However each protocol wrapped it: no connection was made.
+	var local *transport.LocalAddressError
+	if errors.As(err, &local) {
+		return "connect"
 	}
 	var failed *transport.TransportError
 	if errors.As(err, &failed) {
@@ -1302,6 +1308,11 @@ func httpcloak_session_new(configJSON *C.char) (hcRet C.int64_t) {
 	// Handle local address binding (for IPv6 rotation)
 	if config.LocalAddress != "" {
 		opts = append(opts, httpcloak.WithLocalAddress(config.LocalAddress))
+	}
+
+	// Handle the public-addresses-only dial guard
+	if config.PublicAddressesOnly {
+		opts = append(opts, httpcloak.WithPublicAddressesOnly())
 	}
 
 	// Handle key log file (for Wireshark decryption)
